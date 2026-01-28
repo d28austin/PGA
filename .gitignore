@@ -41,6 +41,7 @@ Thumbs.db
 !package.json
 *.csv
 *.txt
+!requirements.txt
 *.log
 
 # Cache directories
