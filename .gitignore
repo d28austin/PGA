@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database files (we'll exclude the local database)
+*.db
+data/cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Test files and temporary data
+*.json
+!package.json
+*.csv
+*.txt
+*.log
+
+# Cache directories
+__pycache__/
+.pytest_cache/
