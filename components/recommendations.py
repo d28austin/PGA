@@ -138,27 +138,46 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
     # API Key input for odds
     st.subheader("Betting Odds Integration")
 
+    # Check for API key in secrets first
+    api_key_from_secrets = None
+    try:
+        if hasattr(st, 'secrets') and 'odds_api' in st.secrets:
+            api_key_from_secrets = st.secrets['odds_api']['api_key']
+    except:
+        pass
+
     col1, col2 = st.columns([2, 1])
 
     with col1:
-        api_key = st.text_input(
-            "The Odds API Key (optional - get free key at the-odds-api.com)",
-            type="password",
-            help="Enter your API key to fetch live betting odds. Free tier: 500 requests/month"
-        )
+        if api_key_from_secrets:
+            st.success("🔑 API Key loaded from secrets")
+            api_key = api_key_from_secrets
+            use_live_odds = st.checkbox("Use Live Odds", value=True,
+                                       help="Uncheck to use sample data instead")
+        else:
+            api_key = st.text_input(
+                "The Odds API Key (optional - get free key at the-odds-api.com)",
+                type="password",
+                help="Enter your API key to fetch live betting odds. Free tier: 500 requests/month"
+            )
+            use_live_odds = bool(api_key)
 
     with col2:
-        use_sample_data = st.checkbox("Use Sample Odds Data", value=True,
-                                      help="Test with sample data if you don't have an API key")
+        if api_key_from_secrets:
+            use_sample_data = not use_live_odds
+        else:
+            use_sample_data = st.checkbox("Use Sample Odds Data", value=True,
+                                          help="Test with sample data if you don't have an API key")
 
     # Initialize odds fetcher if we have a key or want sample data
     if api_key or use_sample_data:
         from data.odds_fetcher import OddsFetcher
-        odds_fetcher = OddsFetcher(api_key=api_key if api_key else None)
 
         if use_sample_data:
+            odds_fetcher = OddsFetcher(api_key=None)
             st.info("📊 Using sample betting odds data for demonstration")
         else:
+            odds_fetcher = OddsFetcher(api_key=api_key)
             st.success("✅ Connected to betting odds API")
 
     st.markdown("---")
@@ -197,8 +216,17 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
     # Get odds data if available
     odds_df = None
     if odds_fetcher:
-        with st.spinner("Fetching live betting odds..."):
-            odds_df = odds_fetcher._get_sample_odds()  # Using sample for now
+        with st.spinner("Fetching betting odds..."):
+            # Try to fetch odds for this specific tournament
+            if use_sample_data:
+                odds_df = odds_fetcher._get_sample_odds()
+            else:
+                odds_df = odds_fetcher.get_tournament_odds(tournament_name)
+
+                # If no odds found for this specific tournament, use sample data
+                if odds_df.empty:
+                    st.warning(f"No live odds available for '{tournament_name}'. Using sample data.")
+                    odds_df = odds_fetcher._get_sample_odds()
 
             if not odds_df.empty:
                 # Get best odds for each player

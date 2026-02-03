@@ -22,44 +22,78 @@ class OddsFetcher:
         self.api_key = api_key
         self.base_url = "https://api.the-odds-api.com/v4"
 
-    def get_available_tournaments(self) -> List[Dict]:
+        # Map tournament names to API sport keys
+        self.tournament_map = {
+            'Masters Tournament': 'golf_masters_tournament_winner',
+            'The Masters': 'golf_masters_tournament_winner',
+            'Masters': 'golf_masters_tournament_winner',
+            'PGA Championship': 'golf_pga_championship_winner',
+            'U.S. Open': 'golf_us_open_winner',
+            'US Open': 'golf_us_open_winner',
+            'United States Open Championship': 'golf_us_open_winner',
+            'The Open Championship': 'golf_the_open_championship_winner',
+            'The Open': 'golf_the_open_championship_winner',
+            'British Open': 'golf_the_open_championship_winner'
+        }
+
+    def get_available_golf_sports(self) -> List[Dict]:
         """
-        Get list of available PGA tournaments with odds
+        Get list of available golf sports/tournaments with odds
 
         Returns:
-            List of tournament dictionaries
+            List of golf sport dictionaries
         """
         if not self.api_key:
             print("No API key provided. Using sample data.")
             return []
 
         try:
-            url = f"{self.base_url}/sports/golf_pga/events"
+            url = f"{self.base_url}/sports"
             params = {
-                'apiKey': self.api_key,
-                'dateFormat': 'iso'
+                'apiKey': self.api_key
             }
 
             response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
 
-            events = response.json()
-            print(f"Found {len(events)} tournaments with available odds")
-            return events
+            all_sports = response.json()
+            # Filter for golf sports
+            golf_sports = [s for s in all_sports if 'golf' in s.get('key', '').lower()]
+
+            print(f"Found {len(golf_sports)} golf tournaments with available odds")
+            return golf_sports
 
         except Exception as e:
             print(f"Error fetching tournaments: {e}")
             return []
 
-    def get_tournament_odds(self, event_id: str, markets: List[str] = None) -> pd.DataFrame:
+    def get_sport_key_for_tournament(self, tournament_name: str) -> Optional[str]:
+        """
+        Get the API sport key for a tournament name
+
+        Args:
+            tournament_name: Name of the tournament
+
+        Returns:
+            Sport key or None if not found
+        """
+        # Check exact matches first
+        if tournament_name in self.tournament_map:
+            return self.tournament_map[tournament_name]
+
+        # Check partial matches
+        for key, sport_key in self.tournament_map.items():
+            if key.lower() in tournament_name.lower() or tournament_name.lower() in key.lower():
+                return sport_key
+
+        return None
+
+    def get_tournament_odds(self, tournament_name: str) -> pd.DataFrame:
         """
         Get odds for a specific tournament
 
         Args:
-            event_id: Tournament event ID
-            markets: List of markets (default: ['h2h', 'outrights'])
-                    'h2h' = head-to-head matchups
-                    'outrights' = tournament winner odds
+            tournament_name: Name of the tournament (e.g., "Masters Tournament")
 
         Returns:
             DataFrame with player odds
@@ -68,15 +102,18 @@ class OddsFetcher:
             print("No API key provided. Using sample data.")
             return self._get_sample_odds()
 
-        if markets is None:
-            markets = ['outrights']  # Tournament winner odds
+        # Get sport key for this tournament
+        sport_key = self.get_sport_key_for_tournament(tournament_name)
+
+        if not sport_key:
+            print(f"No odds available for '{tournament_name}'. Supported: Masters, PGA Championship, US Open, The Open")
+            return self._get_sample_odds()
 
         try:
-            url = f"{self.base_url}/sports/golf_pga/events/{event_id}/odds"
+            url = f"{self.base_url}/sports/{sport_key}/odds"
             params = {
                 'apiKey': self.api_key,
                 'regions': 'us',  # US bookmakers
-                'markets': ','.join(markets),
                 'oddsFormat': 'american'  # American odds format (+150, -110, etc.)
             }
 
@@ -85,30 +122,49 @@ class OddsFetcher:
 
             data = response.json()
 
-            # Parse odds data
+            # Parse odds data - API returns list of events
             odds_list = []
 
-            for bookmaker in data.get('bookmakers', []):
-                bookmaker_name = bookmaker.get('title')
+            # Handle list response (each item is an event)
+            if isinstance(data, list):
+                for event in data:
+                    for bookmaker in event.get('bookmakers', []):
+                        bookmaker_name = bookmaker.get('title')
 
-                for market in bookmaker.get('markets', []):
-                    market_type = market.get('key')
+                        for market in bookmaker.get('markets', []):
+                            market_type = market.get('key')
 
-                    for outcome in market.get('outcomes', []):
-                        odds_list.append({
-                            'player_name': outcome.get('name'),
-                            'bookmaker': bookmaker_name,
-                            'market': market_type,
-                            'odds': outcome.get('price'),
-                            'last_update': bookmaker.get('last_update')
-                        })
+                            for outcome in market.get('outcomes', []):
+                                odds_list.append({
+                                    'player_name': outcome.get('name'),
+                                    'bookmaker': bookmaker_name,
+                                    'market': market_type,
+                                    'odds': outcome.get('price'),
+                                    'last_update': bookmaker.get('last_update')
+                                })
+            # Handle dict response (single event)
+            elif isinstance(data, dict):
+                for bookmaker in data.get('bookmakers', []):
+                    bookmaker_name = bookmaker.get('title')
+
+                    for market in bookmaker.get('markets', []):
+                        market_type = market.get('key')
+
+                        for outcome in market.get('outcomes', []):
+                            odds_list.append({
+                                'player_name': outcome.get('name'),
+                                'bookmaker': bookmaker_name,
+                                'market': market_type,
+                                'odds': outcome.get('price'),
+                                'last_update': bookmaker.get('last_update')
+                            })
 
             if odds_list:
                 df = pd.DataFrame(odds_list)
                 print(f"Retrieved odds for {df['player_name'].nunique()} players from {df['bookmaker'].nunique()} bookmakers")
                 return df
             else:
-                print("No odds data found")
+                print("No odds data found for this tournament")
                 return pd.DataFrame()
 
         except Exception as e:
