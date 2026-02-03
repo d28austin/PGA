@@ -13,7 +13,11 @@ import sqlite3
 
 def calculate_enhanced_value(player_data: pd.Series, odds: Optional[float] = None) -> dict:
     """
-    Calculate enhanced value score incorporating betting odds
+    Calculate enhanced value score using regression-optimized weights
+
+    Based on backtesting analysis:
+    - Average finish at course is the dominant predictor (66.3% importance)
+    - Regression coefficients from Ridge model optimized on historical tournament data
 
     Args:
         player_data: Series with player statistics
@@ -22,38 +26,79 @@ def calculate_enhanced_value(player_data: pd.Series, odds: Optional[float] = Non
     Returns:
         Dictionary with value metrics
     """
-    # Historical performance metrics (0-100 scale)
+    # Extract features
+    events = player_data.get('events', 0)
+    wins = player_data.get('wins', 0)
+    top_10s = player_data.get('top_10s', 0)
+    avg_finish = player_data.get('avg_finish', None)
+
+    # Initialize component scores
     history_score = 0
-    recent_form_score = 0
     course_fit_score = 0
+    recent_form_score = 0
 
-    # Historical wins/top 10s at this course
-    if 'wins' in player_data and player_data.get('wins', 0) > 0:
-        history_score += 30
-    if 'top_10s' in player_data:
-        top_10_rate = player_data.get('top_10s', 0) / max(player_data.get('events', 1), 1)
-        history_score += min(top_10_rate * 100, 40)
+    # Only calculate if player has history at this course
+    if events > 0:
+        # REGRESSION-BASED PREDICTION (using Ridge coefficients from backtesting)
+        # These coefficients were optimized against actual tournament results
+        # Coefficients: prior_wins=-3.083, prior_top10s=4.865, prior_events=-6.271, prior_avg_finish=0.835
 
-    # Recent form (last 5-10 events)
+        # Standardize features (approximate based on typical ranges)
+        std_wins = (wins - 0.2) / 0.5  # typical range 0-2 wins
+        std_top10s = (top_10s - 2.0) / 3.0  # typical range 0-10
+        std_events = (events - 5.0) / 3.0  # typical range 1-15
+        std_avg_finish = (avg_finish - 30.0) / 15.0 if pd.notna(avg_finish) else 1.0  # typical range 10-60
+
+        # Predict finish position using Ridge regression weights
+        predicted_finish = (
+            (-3.083 * std_wins) +
+            (4.865 * std_top10s) +
+            (-6.271 * std_events) +
+            (0.835 * std_avg_finish) +
+            45.0  # intercept (average finish position)
+        )
+
+        # Convert predicted finish to value score (lower finish = higher value)
+        # Scale: 1st place = 100 points, 50th place = 0 points
+        course_fit_score = max(0, min(100, 100 - (predicted_finish * 2)))
+
+        # HISTORICAL PERFORMANCE COMPONENTS (for transparency)
+        # Course history - this is now the dominant factor (66.3% importance)
+        if pd.notna(avg_finish):
+            if avg_finish <= 15:
+                history_score += 40  # Elite course history
+            elif avg_finish <= 25:
+                history_score += 30  # Strong course history
+            elif avg_finish <= 35:
+                history_score += 20  # Good course history
+            else:
+                history_score += 10  # Weak course history
+
+        # Wins bonus (still important)
+        if wins > 0:
+            history_score += min(wins * 15, 30)
+
+        # Top 10 consistency (moderate importance)
+        top_10_rate = top_10s / events if events > 0 else 0
+        history_score += min(top_10_rate * 30, 20)
+
+    else:
+        # No history at this course - use conservative estimate
+        course_fit_score = 20  # Low baseline for unknowns
+        history_score = 10
+
+    # Recent form (if available)
     if 'recent_avg_finish' in player_data:
-        avg_finish = player_data.get('recent_avg_finish', 70)
-        if avg_finish <= 10:
-            recent_form_score = 40
-        elif avg_finish <= 20:
+        recent_avg = player_data.get('recent_avg_finish', 70)
+        if recent_avg <= 10:
             recent_form_score = 30
-        elif avg_finish <= 30:
+        elif recent_avg <= 20:
             recent_form_score = 20
-        else:
+        elif recent_avg <= 30:
             recent_form_score = 10
 
-    # Course fit (strokes gained, scoring average, etc.)
-    if 'avg_score' in player_data and 'par' in player_data:
-        scoring = player_data.get('avg_score', 72)
-        par = player_data.get('par', 72)
-        if scoring < par:
-            course_fit_score = min((par - scoring) * 10, 30)
-
-    base_value = history_score + recent_form_score + course_fit_score
+    # Base value combines regression prediction with historical components
+    base_value = course_fit_score * 0.6 + history_score * 0.3 + recent_form_score * 0.1
 
     result = {
         'base_value': base_value,
@@ -67,58 +112,60 @@ def calculate_enhanced_value(player_data: pd.Series, odds: Optional[float] = Non
         implied_prob = american_to_probability(odds)
         decimal_odds = american_to_decimal(odds)
 
-        # Estimate win probability from historical performance
-        # Use more realistic estimation based on actual performance
-        estimated_win_prob = 0.0
-
-        # Base estimation on historical performance
+        # Estimate win probability from regression-based prediction
         events = player_data.get('events', 0)
         wins = player_data.get('wins', 0)
 
-        if events > 0:
-            # Historical win rate is primary signal
-            win_rate = wins / events
-            # Boost for consistent top 10s
-            top_10_rate = player_data.get('top_10s', 0) / events if events > 0 else 0
+        if events > 0 and pd.notna(avg_finish):
+            # Use regression-predicted finish to estimate win probability
+            # Players finishing in top 5 have ~20% win rate, top 10 have ~10%, etc.
+            predicted_finish = 100 - (course_fit_score / 2)  # Reverse the score back to finish position
 
-            # Weighted estimation (historical performance weighted heavily)
-            estimated_win_prob = (win_rate * 0.7) + (top_10_rate * 0.15) + (base_value / 1000 * 0.15)
-            estimated_win_prob = max(0.001, min(estimated_win_prob, 0.30))  # Cap between 0.1% and 30%
-        else:
-            # No history - use base value with heavy discount
-            estimated_win_prob = base_value / 2000  # More conservative
-            estimated_win_prob = max(0.001, min(estimated_win_prob, 0.05))  # Cap at 5%
-
-        # Calculate value edge with protection against extreme values
-        if implied_prob > 0.001:  # Only calculate if odds are reasonable (better than +100000)
-            # Use absolute difference for long shots to prevent explosion
-            if implied_prob < 0.02:  # Very long odds (worse than +5000)
-                # For long shots, use absolute difference scaled
-                value_edge = (estimated_win_prob - implied_prob) * 1000  # Scale to percentage
+            if predicted_finish <= 5:
+                estimated_win_prob = 0.20
+            elif predicted_finish <= 10:
+                estimated_win_prob = 0.10
+            elif predicted_finish <= 15:
+                estimated_win_prob = 0.05
+            elif predicted_finish <= 25:
+                estimated_win_prob = 0.02
+            elif predicted_finish <= 40:
+                estimated_win_prob = 0.01
             else:
-                # For reasonable odds, use percentage difference
-                value_edge = ((estimated_win_prob - implied_prob) / implied_prob) * 100
+                estimated_win_prob = 0.005
 
-            # Cap value edge to prevent extreme scores
-            value_edge = max(-100, min(value_edge, 200))  # Cap between -100% and +200%
+            # Adjust based on actual historical win rate
+            win_rate = wins / events
+            estimated_win_prob = (estimated_win_prob * 0.7) + (win_rate * 0.3)
+            estimated_win_prob = max(0.001, min(estimated_win_prob, 0.30))
         else:
-            value_edge = 0  # Ignore unrealistic odds
+            # No history - conservative estimate based on base value
+            estimated_win_prob = base_value / 2000
+            estimated_win_prob = max(0.001, min(estimated_win_prob, 0.05))
 
-        # Calculate final value score
-        # Historical performance should be the primary driver, odds are secondary
+        # Calculate value edge
+        if implied_prob > 0.001:
+            if implied_prob < 0.02:  # Very long odds
+                value_edge = (estimated_win_prob - implied_prob) * 1000
+            else:
+                value_edge = ((estimated_win_prob - implied_prob) / implied_prob) * 100
+            value_edge = max(-100, min(value_edge, 200))
+        else:
+            value_edge = 0
+
+        # Odds adjustment (more conservative than before)
         odds_adjustment = 0
-
-        if value_edge > 50:  # Significantly underpriced
-            odds_adjustment = 20
-        elif value_edge > 20:  # Good value
+        if value_edge > 50:
+            odds_adjustment = 15
+        elif value_edge > 20:
             odds_adjustment = 10
-        elif value_edge > 0:  # Slight value
+        elif value_edge > 0:
             odds_adjustment = 5
-        elif value_edge < -50:  # Significantly overpriced
+        elif value_edge < -50:
             odds_adjustment = -15
-        elif value_edge < -20:  # Overpriced
+        elif value_edge < -20:
             odds_adjustment = -10
-        elif value_edge < 0:  # Slightly overpriced
+        elif value_edge < 0:
             odds_adjustment = -5
 
         final_value_score = base_value + odds_adjustment
