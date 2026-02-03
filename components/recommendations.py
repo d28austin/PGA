@@ -215,28 +215,60 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
 
     # Get odds data if available
     odds_df = None
+    odds_source = None
+
     if odds_fetcher:
-        with st.spinner("Fetching betting odds..."):
+        with st.spinner("Loading betting odds..."):
             # Try to fetch odds for this specific tournament
             if use_sample_data:
-                odds_df = odds_fetcher._get_sample_odds()
+                odds_df = odds_fetcher._get_sample_odds(tournament_name)
+                odds_source = "sample_data"
             else:
                 odds_df = odds_fetcher.get_tournament_odds(tournament_name)
 
-                # If no odds found for this specific tournament, use sample data
-                if odds_df.empty:
-                    st.warning(f"No live odds available for '{tournament_name}'. Using sample data.")
-                    odds_df = odds_fetcher._get_sample_odds()
+                if not odds_df.empty:
+                    # Determine the source
+                    if 'scraped_at' in odds_df.columns:
+                        odds_source = "scraped"
+                        scraped_time = pd.to_datetime(odds_df['scraped_at'].iloc[0]).strftime('%B %d, %Y at %I:%M %p')
+                    else:
+                        odds_source = "live_api"
+                else:
+                    st.warning(f"No odds available for '{tournament_name}'.")
+                    odds_df = odds_fetcher._get_sample_odds(tournament_name)
+                    odds_source = "sample_data"
 
-            if not odds_df.empty:
-                # Get best odds for each player
-                best_odds = odds_df.groupby('player_name').agg({
-                    'odds': 'mean'
-                }).reset_index()
-                best_odds.columns = ['player_name', 'avg_odds']
+    # Display odds source info
+    if odds_df is not None and not odds_df.empty:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if odds_source == "scraped":
+                st.success(f"📊 Using Scraped Odds")
+                st.caption(f"Last updated: {scraped_time}")
+            elif odds_source == "live_api":
+                st.success(f"🔴 Using Live API Odds")
+            else:
+                st.info(f"📝 Using Sample Odds")
+                st.caption("Run scraper for live data")
 
-                # Merge with players data
-                players_df = players_df.merge(best_odds, on='player_name', how='left')
+        with col2:
+            bookmakers = odds_df['bookmaker'].unique()
+            st.metric("Bookmakers", len(bookmakers))
+            st.caption(", ".join(bookmakers))
+
+        with col3:
+            st.metric("Players with Odds", odds_df['player_name'].nunique())
+
+    # Merge odds with historical data
+    if odds_df is not None and not odds_df.empty:
+        # Get best odds for each player
+        best_odds = odds_df.groupby('player_name').agg({
+            'odds': 'mean'
+        }).reset_index()
+        best_odds.columns = ['player_name', 'avg_odds']
+
+        # Merge with players data
+        players_df = players_df.merge(best_odds, on='player_name', how='left')
 
     # Calculate value scores for all players
     value_scores = []
@@ -261,42 +293,184 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
         })
 
     value_df = pd.DataFrame(value_scores)
-    value_df = value_df.sort_values('value_score', ascending=False)
+
+    # Add filter options
+    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        show_option = st.radio(
+            "Show Players",
+            ["With Odds Only", "All Players", "Without Odds"],
+            help="Filter based on odds availability"
+        )
+
+    with col2:
+        min_events = st.slider(
+            "Min Events at Course",
+            min_value=1,
+            max_value=int(value_df['events'].max()) if not value_df.empty else 10,
+            value=1,
+            help="Minimum number of times played this tournament"
+        )
+
+    with col3:
+        sort_by = st.selectbox(
+            "Sort By",
+            ["Value Score", "Value Edge", "Recent Odds", "Historical Wins"],
+            help="How to rank players"
+        )
+
+    # Apply filters
+    filtered_df = value_df.copy()
+
+    if show_option == "With Odds Only":
+        filtered_df = filtered_df[filtered_df['odds'].notna()]
+    elif show_option == "Without Odds":
+        filtered_df = filtered_df[filtered_df['odds'].isna()]
+
+    filtered_df = filtered_df[filtered_df['events'] >= min_events]
+
+    # Apply sorting
+    if sort_by == "Value Score":
+        filtered_df = filtered_df.sort_values('value_score', ascending=False)
+    elif sort_by == "Value Edge":
+        filtered_df = filtered_df.sort_values('value_edge', ascending=False)
+    elif sort_by == "Recent Odds":
+        filtered_df = filtered_df.sort_values('odds', ascending=True)
+    elif sort_by == "Historical Wins":
+        filtered_df = filtered_df.sort_values('wins', ascending=False)
+
+    if filtered_df.empty:
+        st.warning("No players match your filters. Try adjusting the criteria.")
+        return
 
     # Display top recommendations
+    st.markdown("---")
     st.subheader("🏆 Top Value Picks")
 
-    # Top 10 recommendations
-    top_picks = value_df.head(10).copy()
+    # Show top 15
+    top_picks = filtered_df.head(15).copy()
+
+    # Add top 3 detailed recommendations
+    if len(top_picks) >= 3:
+        st.markdown("### 🎯 Top 3 Recommendations with Analysis")
+
+        for i in range(min(3, len(top_picks))):
+            player = top_picks.iloc[i]
+
+            with st.expander(f"#{i+1}: {player['player_name']} - Value Score: {player['value_score']:.1f}", expanded=(i==0)):
+                col1, col2 = st.columns([2, 1])
+
+                with col1:
+                    st.markdown("**Why This Pick:**")
+
+                    reasons = []
+
+                    # Historical performance
+                    if player['wins'] > 0:
+                        reasons.append(f"✅ {int(player['wins'])} win(s) at this tournament")
+                    if player['top_10s'] >= 3:
+                        reasons.append(f"✅ {int(player['top_10s'])} top 10 finishes")
+                    if player['avg_finish'] <= 20 and player['avg_finish'] > 0:
+                        reasons.append(f"✅ Strong avg finish: {player['avg_finish']:.1f}")
+
+                    # Odds value
+                    if pd.notna(player['odds']) and pd.notna(player['value_edge']):
+                        if player['value_edge'] > 20:
+                            reasons.append(f"✅ Excellent value: {player['value_edge']:+.1f}% edge over market")
+                        elif player['value_edge'] > 0:
+                            reasons.append(f"✅ Positive value: {player['value_edge']:+.1f}% edge")
+                        else:
+                            reasons.append(f"⚠️ Overpriced by market: {player['value_edge']:+.1f}%")
+
+                    # Experience
+                    if player['events'] >= 5:
+                        reasons.append(f"✅ Experienced: {int(player['events'])} appearances")
+
+                    for reason in reasons:
+                        st.markdown(reason)
+
+                with col2:
+                    if pd.notna(player['odds']):
+                        st.metric("Odds", f"+{int(player['odds'])}" if player['odds'] > 0 else f"{int(player['odds'])}")
+                        st.metric("Win %", f"{player['implied_prob']*100:.1f}%")
+                        st.metric("Edge", f"{player['value_edge']:+.1f}%")
+                    else:
+                        st.info("No odds available")
+
+                    st.metric("Avg Finish", f"{player['avg_finish']:.1f}")
+                    st.metric("Events", int(player['events']))
+
+        st.markdown("---")
 
     # Format for display
     display_df = top_picks.copy()
     display_df['value_score'] = display_df['value_score'].round(1)
     display_df['avg_finish'] = display_df['avg_finish'].round(1)
 
+    # Format odds columns
     if 'odds' in display_df.columns and display_df['odds'].notna().any():
-        display_df['odds'] = display_df['odds'].apply(lambda x: f"+{int(x)}" if pd.notna(x) and x > 0 else f"{int(x)}" if pd.notna(x) else "N/A")
-        display_df['implied_prob'] = display_df['implied_prob'].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "N/A")
-        display_df['value_edge'] = display_df['value_edge'].apply(lambda x: f"{x:+.1f}%" if pd.notna(x) else "N/A")
+        display_df['odds_display'] = display_df['odds'].apply(
+            lambda x: f"+{int(x)}" if pd.notna(x) and x > 0 else f"{int(x)}" if pd.notna(x) else "—"
+        )
+        display_df['implied_prob_display'] = display_df['implied_prob'].apply(
+            lambda x: f"{x*100:.1f}%" if pd.notna(x) else "—"
+        )
+        display_df['value_edge_display'] = display_df['value_edge'].apply(
+            lambda x: f"{x:+.1f}%" if pd.notna(x) else "—"
+        )
+    else:
+        display_df['odds_display'] = "—"
+        display_df['implied_prob_display'] = "—"
+        display_df['value_edge_display'] = "—"
+
+    # Determine which columns to show based on odds availability
+    has_odds = display_df['odds'].notna().any()
+
+    if has_odds:
+        columns_to_show = ['player_name', 'value_score', 'odds_display', 'implied_prob_display',
+                          'value_edge_display', 'wins', 'top_10s', 'avg_finish', 'events']
+        column_labels = {
+            'player_name': 'Player',
+            'value_score': 'Value',
+            'odds_display': 'Odds',
+            'implied_prob_display': 'Win %',
+            'value_edge_display': 'Edge',
+            'wins': 'Wins',
+            'top_10s': 'Top 10s',
+            'avg_finish': 'Avg',
+            'events': 'Evts'
+        }
+    else:
+        columns_to_show = ['player_name', 'value_score', 'wins', 'top_10s', 'avg_finish', 'events']
+        column_labels = {
+            'player_name': 'Player',
+            'value_score': 'Value Score',
+            'wins': 'Wins',
+            'top_10s': 'Top 10s',
+            'avg_finish': 'Avg Finish',
+            'events': 'Events'
+        }
+
+    # Rename columns for display
+    display_df_final = display_df[columns_to_show].copy()
+    display_df_final.columns = [column_labels[col] for col in columns_to_show]
 
     # Style the dataframe
     st.dataframe(
-        display_df[['player_name', 'value_score', 'events', 'wins', 'top_10s',
-                   'avg_finish', 'odds', 'implied_prob', 'value_edge']],
-        column_config={
-            'player_name': st.column_config.TextColumn("Player", width="medium"),
-            'value_score': st.column_config.NumberColumn("Value Score", width="small", help="Higher = Better"),
-            'events': st.column_config.NumberColumn("Events", width="small"),
-            'wins': st.column_config.NumberColumn("Wins", width="small"),
-            'top_10s': st.column_config.NumberColumn("Top 10s", width="small"),
-            'avg_finish': st.column_config.NumberColumn("Avg Finish", width="small"),
-            'odds': st.column_config.TextColumn("Odds", width="small", help="American odds"),
-            'implied_prob': st.column_config.TextColumn("Win %", width="small", help="Implied probability"),
-            'value_edge': st.column_config.TextColumn("Edge", width="small", help="Value vs odds")
-        },
+        display_df_final,
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        height=600
     )
+
+    # Add legend
+    st.caption("""
+    **Value Score**: Combined metric (history + form + course fit + odds value)
+    **Edge**: Your advantage over market odds (positive = underpriced, negative = overpriced)
+    **Avg**: Average finish position at this tournament
+    """)
 
     # Visualizations
     st.markdown("---")
