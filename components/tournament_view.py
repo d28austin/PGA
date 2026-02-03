@@ -148,23 +148,23 @@ def render_results_tab(tournament_name, db, available_years):
         lambda x: "🚫 Used" if x in used_players else "✅ Available"
     )
 
+    # Sort by position (1st place at top)
+    results_df = results_df.sort_values('position_sort', ascending=True)
+
     # Display tournament info
     st.subheader(f"{tournament_name} - {selected_year} Results")
     st.caption(f"Tournament Par: {tournament_par}")
     st.caption(f"Total Players: {len(results_df)}")
 
-    # Display leaderboard
+    # Display leaderboard (hide helper sort columns)
     st.dataframe(
-        results_df[['position', 'position_sort', 'player_name', 'total_score', 'score_to_par_display', 'score_to_par_numeric', 'earnings_display', 'earnings_numeric', 'status']],
+        results_df[['position', 'player_name', 'total_score', 'score_to_par_display', 'earnings_display', 'status']],
         column_config={
-            "position": st.column_config.TextColumn("Pos", width="small"),
-            "position_sort": st.column_config.NumberColumn("Pos #", help="Numeric position for sorting (999 = missed cut)"),
+            "position": st.column_config.TextColumn("Pos", width="small", help="Finishing position (T = tied)"),
             "player_name": st.column_config.TextColumn("Player", width="medium"),
-            "total_score": st.column_config.NumberColumn("Total", format="%d", help="Total strokes"),
-            "score_to_par_display": st.column_config.TextColumn("To Par", help="Score relative to par (made cuts only)"),
-            "score_to_par_numeric": st.column_config.NumberColumn("To Par #", format="%d", help="Numeric score for sorting"),
+            "total_score": st.column_config.NumberColumn("Total", format="%d", help="Total strokes for the tournament"),
+            "score_to_par_display": st.column_config.TextColumn("To Par", help="Score relative to par (E = even, - = under par)"),
             "earnings_display": st.column_config.TextColumn("Earnings", help="Prize money earned"),
-            "earnings_numeric": st.column_config.NumberColumn("Earnings $", format="$%.0f", help="Numeric earnings for sorting"),
             "status": st.column_config.TextColumn("Status", width="small")
         },
         hide_index=True,
