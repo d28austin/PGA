@@ -690,6 +690,18 @@ def render_field_view(tournament_name, db, fetcher):
     # Display table with row selection
     st.caption("💡 Click on any player row to view detailed analysis below")
 
+    # Add column group headers to clarify data sources
+    col_header1, col_header2, col_header3 = st.columns([0.45, 0.35, 0.20])
+    with col_header1:
+        st.markdown(f"**📍 {tournament_name} Performance**")
+        st.caption("_Player through Avg Score columns_")
+    with col_header2:
+        st.markdown("**🔥 Recent Form (All Tournaments)**")
+        st.caption("_L5 and L10 metrics_")
+    with col_header3:
+        st.markdown("**📊 Overall Rankings**")
+        st.caption("_OWGR, Value, Status_")
+
     st.dataframe(
         display_df[['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'made_cut_pct', 'avg_score_sortable', 'last_5_avg_display', 'last_5_cut_pct_display', 'last_10_avg_display', 'last_10_cut_pct_display', 'owgr_numeric', 'value_numeric', 'status']],
         column_config={
