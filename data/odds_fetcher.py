@@ -89,6 +89,63 @@ class OddsFetcher:
 
         return None
 
+    def get_scraped_odds_from_db(self, tournament_name: str = None) -> pd.DataFrame:
+        """
+        Get odds from weekly scraping (if available)
+
+        Args:
+            tournament_name: Optional tournament name to filter
+
+        Returns:
+            DataFrame with scraped odds or empty DataFrame
+        """
+        try:
+            import sqlite3
+            db_path = "data/cache/pga_data.db"
+
+            if not os.path.exists(db_path):
+                return pd.DataFrame()
+
+            conn = sqlite3.connect(db_path)
+
+            # Check if table exists
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='weekly_odds'")
+            if not cursor.fetchone():
+                conn.close()
+                return pd.DataFrame()
+
+            # Get most recent odds
+            if tournament_name:
+                query = """
+                    SELECT player_name, odds, bookmaker, tournament, scraped_at
+                    FROM weekly_odds
+                    WHERE tournament LIKE ?
+                    ORDER BY created_at DESC
+                """
+                df = pd.read_sql(query, conn, params=(f'%{tournament_name}%',))
+            else:
+                # Get most recent scraping session
+                query = """
+                    SELECT player_name, odds, bookmaker, tournament, scraped_at
+                    FROM weekly_odds
+                    WHERE scraped_at = (SELECT MAX(scraped_at) FROM weekly_odds)
+                """
+                df = pd.read_sql(query, conn)
+
+            conn.close()
+
+            if not df.empty:
+                df['market'] = 'tournament_winner'
+                df['last_update'] = df['scraped_at']
+                print(f"Found {len(df)} scraped odds from database (last updated: {df['scraped_at'].iloc[0]})")
+
+            return df
+
+        except Exception as e:
+            print(f"Error loading scraped odds: {e}")
+            return pd.DataFrame()
+
     def get_tournament_odds(self, tournament_name: str) -> pd.DataFrame:
         """
         Get odds for a specific tournament
@@ -99,6 +156,11 @@ class OddsFetcher:
         Returns:
             DataFrame with player odds
         """
+        # First, check if we have scraped odds in the database
+        scraped_odds = self.get_scraped_odds_from_db(tournament_name)
+        if not scraped_odds.empty:
+            return scraped_odds
+
         if not self.api_key:
             print("No API key provided. Using sample data.")
             return self._get_sample_odds(tournament_name)
@@ -107,10 +169,18 @@ class OddsFetcher:
         sport_key = self.get_sport_key_for_tournament(tournament_name)
 
         if not sport_key:
-            # For non-major tournaments, use sample data or scraper
+            # For non-major tournaments, check for recent scraped odds or use sample data
             print(f"'{tournament_name}' is not a major championship.")
             print("The Odds API only covers: Masters, PGA Championship, US Open, The Open")
+
+            # Try to get any recent scraped odds
+            recent_scraped = self.get_scraped_odds_from_db()
+            if not recent_scraped.empty:
+                print("Using recently scraped odds from database...")
+                return recent_scraped
+
             print("Using sample data for demonstration...")
+            print("TIP: Run 'python scrape_weekly_odds.py' to get live odds!")
             return self._get_sample_odds(tournament_name)
 
         try:
