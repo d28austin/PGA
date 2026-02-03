@@ -213,7 +213,7 @@ def main():
         "👤 Player Deep Dive",
         "📈 Recent Form",
         "⚖️ Compare Players",
-        "🎯 Recommendations",
+        "💰 Betting Odds",
         "📅 2026 Schedule",
         "👥 All Players"
     ])

@@ -75,7 +75,7 @@ def american_to_decimal(american_odds: int) -> float:
 
 def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None):
     """
-    Render enhanced recommendations with betting odds integration
+    Render betting odds analysis with value calculations
 
     Args:
         tournament_name: Name of the tournament
@@ -83,22 +83,23 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
         fetcher: ESPN data fetcher
         odds_fetcher: Odds fetcher instance (optional)
     """
-    st.header("🎯 Enhanced Recommendations")
+    st.header("💰 Betting Odds & Value Analysis")
 
     # Info about the feature
     with st.expander("ℹ️ How This Works"):
         st.markdown("""
-        This recommendation system combines:
+        This section analyzes betting odds to identify value bets by combining:
+        - **Betting Odds**: Scraped from DraftKings (run weekly scraper for latest odds)
         - **Historical Performance**: Past results at this tournament
-        - **Recent Form**: Performance in last 10 events
-        - **Course Fit**: Scoring average and stats at this venue
-        - **Betting Odds** (when available): Live market prices for value analysis
+        - **Recent Form**: Performance in last 5-10 events across all tournaments
+        - **OWGR**: Current world ranking as quality baseline
 
-        **Value Score**: Higher = Better pick
-        - 70+: Excellent value
-        - 50-70: Good value
-        - 30-50: Fair value
-        - <30: Poor value
+        **Value Score**: Regression-optimized score (typical range 10-50)
+        - 30-50: Elite pick (top OWGR + great form)
+        - 20-29: Premium pick (strong fundamentals)
+        - 15-19: Solid pick (good value indicators)
+        - 10-14: Decent pick (some positives)
+        - 0-9: Risky pick (use caution)
 
         **Value Edge**: Shows if a player is underpriced by bookmakers
         - Positive % = Good betting value
