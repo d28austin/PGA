@@ -216,32 +216,38 @@ class ValueCalculator:
 
 
         else:
-            # No tournament history - rely on OWGR and recent form
-            course_fit_score = 20  # Low baseline
+            # No tournament history - be VERY conservative
+            course_fit_score = 10  # Very low baseline for unknowns
 
-            # Emphasize OWGR when no course history
+            # OWGR is critical when no course history
             if owgr_ranking < 999:
-                if owgr_ranking <= 50:
-                    owgr_score = 30
+                if owgr_ranking <= 10:
+                    owgr_score = 25  # Elite player, no history
+                elif owgr_ranking <= 50:
+                    owgr_score = 20  # Top player
                 elif owgr_ranking <= 100:
-                    owgr_score = 25
+                    owgr_score = 15  # Good player
+                elif owgr_ranking <= 200:
+                    owgr_score = 10  # Decent player
                 else:
-                    owgr_score = 20
+                    owgr_score = max(0, 5 - (owgr_ranking - 200) / 100)  # Worse as ranking gets higher
             else:
-                owgr_score = 10
+                owgr_score = 0  # Unranked = no value without history
 
-            # Emphasize recent form when no course history
+            # Recent form matters but be conservative
             if pd.notna(recent_avg_finish) and recent_avg_finish < 999:
-                if recent_avg_finish <= 20:
-                    recent_form_score = 30
-                elif recent_avg_finish <= 30:
-                    recent_form_score = 25
+                if recent_avg_finish <= 15:
+                    recent_form_score = 20  # Great recent form
+                elif recent_avg_finish <= 25:
+                    recent_form_score = 15  # Good recent form
+                elif recent_avg_finish <= 35:
+                    recent_form_score = 10  # Decent recent form
                 else:
-                    recent_form_score = 15
+                    recent_form_score = 5  # Poor recent form
             else:
-                recent_form_score = 10
+                recent_form_score = 0  # No recent data = no form score
 
-            history_score = 5  # Minimal since no history
+            history_score = 0  # Zero since no history
 
         # WEIGHTED COMBINATION
         # Weights based on Random Forest feature importance:
