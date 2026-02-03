@@ -408,26 +408,37 @@ def render_field_view(tournament_name, db, fetcher):
     if pd.isna(field_avg_score):
         field_avg_score = 0
 
-    # Get recent form data for all players (last 3 years across all tournaments)
+    # Get recent form data for all players
     conn_recent = sqlite3.connect(db.db_path)
     max_year = field_history_df['year'].max() if not field_history_df.empty else 2025
-    min_year = max_year - 2
+    min_year_all = max_year - 2  # Last 2-3 years for overall form calculation
 
     recent_form_data = {}
     for player in player_stats['player_name']:
-        # Get all recent events (last 2-3 years for value calculation)
+        # Get ALL recent events (last 2-3 years for value calculation)
         recent_df = pd.read_sql("""
-            SELECT position, year
+            SELECT position, year, tournament_id
             FROM tournament_results
             WHERE player_name = ?
             AND year >= ?
             AND position IS NOT NULL
             AND position != 'None'
             ORDER BY year DESC, tournament_id DESC
-        """, conn_recent, params=(player, min_year))
+        """, conn_recent, params=(player, min_year_all))
 
-        # Get last 10 tournaments specifically for display metrics
-        last_10_df = recent_df.head(10) if not recent_df.empty else pd.DataFrame()
+        # Get last 10 tournaments from a LONGER timeframe to ensure we have 10 events
+        # Some players don't play many events, so look back further
+        last_10_query_df = pd.read_sql("""
+            SELECT position, year, tournament_id
+            FROM tournament_results
+            WHERE player_name = ?
+            AND position IS NOT NULL
+            AND position != 'None'
+            ORDER BY year DESC, tournament_id DESC
+            LIMIT 10
+        """, conn_recent, params=(player,))
+
+        last_10_df = last_10_query_df  # Already limited to 10 by SQL
 
         if not recent_df.empty:
             recent_df['position_clean'] = recent_df['position'].astype(str).str.replace('T', '').str.replace('T-', '')
@@ -616,9 +627,11 @@ def render_field_view(tournament_name, db, fetcher):
 
     # Format Last 10 metrics
     display_df['last_10_avg_display'] = display_df['last_10_avg'].apply(
-        lambda x: round(x, 1) if pd.notna(x) else None
+        lambda x: round(x, 1) if pd.notna(x) and x < 999 else None
     )
-    display_df['last_10_cut_pct_display'] = display_df['last_10_cut_pct'].round(0).astype('Int64')
+    display_df['last_10_cut_pct_display'] = display_df['last_10_cut_pct'].apply(
+        lambda x: int(x) if pd.notna(x) and x > 0 else None
+    )
 
     # Reset index so we can properly access rows by position
     display_df = display_df.reset_index(drop=True)
