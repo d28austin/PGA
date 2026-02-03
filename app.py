@@ -58,13 +58,6 @@ def main():
     with st.sidebar:
         st.header("Settings & Filters")
 
-        # Data refresh button
-        if st.button("🔄 Refresh Tournament Data", use_container_width=True):
-            if load_initial_data():
-                st.success("Data refreshed successfully!")
-            else:
-                st.error("Failed to load data. Check your connection.")
-
         # Load data if not already loaded
         if not st.session_state.data_loaded:
             load_initial_data()
@@ -207,14 +200,15 @@ def main():
             st.rerun()
 
     # Main content area with tabs
-    tab0, tab1, tab2, tab3, tab4, tab_schedule, tab_players = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab_schedule, tab_players, tab_stats = st.tabs([
         "🏌️ In the Field",
         "📊 Tournament History",
         "👤 Player Deep Dive",
         "📈 Recent Form",
         "💰 Betting Odds",
         "📅 2026 Schedule",
-        "👥 All Players"
+        "👥 All Players",
+        "🎯 ESPN Stats"
     ])
 
     with tab0:
@@ -276,6 +270,10 @@ def main():
     with tab_players:
         from components.player_management import render_player_management
         render_player_management(st.session_state.db)
+
+    with tab_stats:
+        from components.player_stats_view import render_player_stats_view
+        render_player_stats_view(st.session_state.db)
 
     # Show used players modal if requested
     if hasattr(st.session_state, 'show_used_players') and st.session_state.show_used_players:

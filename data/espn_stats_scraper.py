@@ -50,7 +50,7 @@ class ESPNStatsScaper:
 
     def scrape_stat_category(self, year: int, stat_key: str) -> pd.DataFrame:
         """
-        Scrape a specific stat category for a season
+        Scrape a specific stat category for a season (with pagination)
 
         Args:
             year: Season year
@@ -59,53 +59,78 @@ class ESPNStatsScaper:
         Returns:
             DataFrame with player stats
         """
-        url = self.base_url.format(year=year, stat=stat_key)
+        print(f"Fetching {self.stat_categories.get(stat_key, stat_key)} for {year}...")
+
+        all_rows = []
+        headers = None
+        page = 1
+        max_pages = 10  # Safety limit (ESPN typically has 4-5 pages max)
 
         try:
-            print(f"Fetching {self.stat_categories.get(stat_key, stat_key)} for {year}...")
+            while page <= max_pages:
+                # ESPN pagination: page 1 has no param, pages 2+ use ?page=N
+                if page == 1:
+                    url = self.base_url.format(year=year, stat=stat_key)
+                else:
+                    url = self.base_url.format(year=year, stat=stat_key) + f"?page={page}"
 
-            response = requests.get(url, headers=self.headers, timeout=15)
-            response.raise_for_status()
+                response = requests.get(url, headers=self.headers, timeout=15)
+                response.raise_for_status()
 
-            soup = BeautifulSoup(response.text, 'html.parser')
+                soup = BeautifulSoup(response.text, 'html.parser')
 
-            # Find the stats table
-            table = soup.find('table', class_='Table')
+                # Find the stats table
+                table = soup.find('table', class_='Table')
 
-            if not table:
-                print(f"  No table found for {stat_key}")
-                return pd.DataFrame()
+                if not table:
+                    # No more tables found, we're done
+                    break
 
-            # Parse table headers
-            headers = []
-            thead = table.find('thead')
-            if thead:
-                for th in thead.find_all('th'):
-                    headers.append(th.get_text(strip=True))
+                # Parse table headers (first page only)
+                if headers is None:
+                    thead = table.find('thead')
+                    if thead:
+                        headers = []
+                        for th in thead.find_all('th'):
+                            headers.append(th.get_text(strip=True))
 
-            # Parse table rows
-            rows = []
-            tbody = table.find('tbody')
-            if tbody:
-                for tr in tbody.find_all('tr'):
-                    row_data = []
-                    for td in tr.find_all('td'):
-                        row_data.append(td.get_text(strip=True))
-                    if row_data:
-                        rows.append(row_data)
+                # Parse table rows
+                tbody = table.find('tbody')
+                if tbody:
+                    page_rows = []
+                    for tr in tbody.find_all('tr'):
+                        row_data = []
+                        for td in tr.find_all('td'):
+                            row_data.append(td.get_text(strip=True))
+                        if row_data:
+                            page_rows.append(row_data)
 
-            if not headers or not rows:
-                print(f"  Could not parse table for {stat_key}")
+                    if not page_rows:
+                        # No rows on this page, we're done
+                        break
+
+                    all_rows.extend(page_rows)
+                    print(f"  Page {page}: {len(page_rows)} players")
+                    page += 1
+                else:
+                    # No tbody, we're done
+                    break
+
+                # Be respectful with pagination requests
+                time.sleep(0.5)
+
+            if not headers or not all_rows:
+                print(f"  No data found for {stat_key}")
                 return pd.DataFrame()
 
             # Create DataFrame
-            df = pd.DataFrame(rows, columns=headers)
+            df = pd.DataFrame(all_rows, columns=headers)
 
             # Add metadata
             df['year'] = year
             df['stat_category'] = stat_key
 
-            print(f"  Found {len(df)} players")
+            print(f"  Total: {len(df)} players across {page-1} page(s)")
             return df
 
         except Exception as e:
@@ -139,7 +164,7 @@ class ESPNStatsScaper:
                 df = self.scrape_stat_category(year, stat_key)
                 if not df.empty:
                     stat_dfs.append(df)
-                time.sleep(1)  # Be respectful
+                time.sleep(2)  # Be respectful - longer delay since we're paginating
 
             if stat_dfs:
                 combined_df = pd.concat(stat_dfs, ignore_index=True)
@@ -199,8 +224,9 @@ class ESPNStatsScaper:
                                 pass
 
                         # Stat value is usually in a column with the stat name
+                        # Skip common non-stat columns: PLAYER, RK, Name, AGE, year, stat_category
                         for col in df.columns:
-                            if col not in ['PLAYER', 'RK', 'year', 'stat_category']:
+                            if col not in ['PLAYER', 'RK', 'Name', 'AGE', 'year', 'stat_category']:
                                 try:
                                     stat_value = float(row[col].replace('%', '').replace(',', ''))
                                     break

@@ -198,6 +198,10 @@ def render_field_view(tournament_name, db, fetcher):
 
     conn.close()
 
+    # Calculate purse rank (will use later for OWGR warnings)
+    purse_rank = None
+    total_tournaments = None
+
     # Display purse information
     if tournament_purse > 0:
         # Find rank (number of tournaments with higher purse + 1)
@@ -401,6 +405,31 @@ def render_field_view(tournament_name, db, fetcher):
     )
     player_stats['owgr'] = player_stats['owgr_numeric'].apply(
         lambda x: str(int(x)) if x < 9999 else 'NR'
+    )
+
+    # Add OWGR warning indicator based on tournament purse tier
+    def should_warn_owgr(owgr_rank, purse_rank, total_tournaments):
+        """Determine if OWGR player is too good for this tournament tier"""
+        if purse_rank is None or total_tournaments is None or owgr_rank >= 9999:
+            return False
+
+        # Calculate tournament tier (based on purse rank)
+        # Top 15 tournaments (Elite): No warnings - use any player
+        if purse_rank <= 15:
+            return False
+        # Ranks 16-17 (Premium): Warn for top 10 OWGR
+        elif purse_rank <= 17:
+            return owgr_rank <= 10
+        # Ranks 18-32 (Standard): Warn for top 25 OWGR
+        elif purse_rank <= 32:
+            return owgr_rank <= 25
+        # Bottom tier (33+, if any): Warn for top 50 OWGR
+        else:
+            return owgr_rank <= 50
+
+    player_stats['owgr_display'] = player_stats.apply(
+        lambda row: f"⚠️ {row['owgr']}" if should_warn_owgr(row['owgr_numeric'], purse_rank, total_tournaments) else row['owgr'],
+        axis=1
     )
 
     # Calculate field average score to par (for comparison)
@@ -618,13 +647,13 @@ def render_field_view(tournament_name, db, fetcher):
         - **Tournament History (5%)**: Bonus for course-specific experience
 
         **Realistic Score Ranges:**
-        - 🏆 **30-50**: Elite pick - Top OWGR, great recent form, strong course history
-        - ⭐ **20-29**: Premium pick - Top-50 OWGR or excellent recent form
-        - ✅ **15-19**: Solid pick - Good ranking or consistent recent performance
-        - 📊 **10-14**: Decent pick - Ranked player with some positive indicators
-        - 📉 **0-9**: Risky pick - Unranked or poor form (use with caution)
-        - ⚠️ **40-59**: Risky pick - Limited/inconsistent
-        - ❌ **0-39**: Avoid - Poor track record
+        - 🏆 **12-14**: Elite pick - Top OWGR, great recent form, strong course history
+        - ⭐ **10-12**: Premium pick - Top-50 OWGR or excellent recent form
+        - ✅ **8-10**: Solid pick - Good ranking or consistent recent performance
+        - 📊 **6-8**: Decent pick - Ranked player with some positive indicators
+        - 📉 **4-6**: Mediocre pick - Mid-tier ranking or inconsistent form
+        - ⚠️ **2-4**: Risky pick - Limited data or poor recent form
+        - ❌ **0-2**: Avoid - Poor track record or unranked
         """)
 
     # Show filter options
@@ -710,8 +739,20 @@ def render_field_view(tournament_name, db, fetcher):
         st.markdown("**📊 Overall Rankings**")
         st.caption("_OWGR, Value, Status_")
 
+    # Add explanation for OWGR warnings
+    if purse_rank is not None and total_tournaments is not None:
+        if purse_rank <= 15:
+            owgr_note = "🏆 **Elite Event** (Top 15) - All OWGR ranks suitable for use"
+        elif purse_rank <= 17:
+            owgr_note = "⭐ **Premium Event** (16-17) - Players with ⚠️ are Top 10 OWGR (consider saving for elite events)"
+        elif purse_rank <= 32:
+            owgr_note = "📊 **Standard Event** (18-32) - Players with ⚠️ are Top 25 OWGR (consider saving for premium+ events)"
+        else:
+            owgr_note = "📉 **Lower-Tier Event** (33+) - Players with ⚠️ are Top 50 OWGR (consider saving for higher-tier events)"
+        st.info(owgr_note)
+
     st.dataframe(
-        display_df[['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'made_cut_pct', 'avg_score_sortable', 'last_5_avg_display', 'last_5_cut_pct_display', 'last_10_avg_display', 'last_10_cut_pct_display', 'owgr_numeric', 'value_numeric', 'status']],
+        display_df[['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'made_cut_pct', 'avg_score_sortable', 'last_5_avg_display', 'last_5_cut_pct_display', 'last_10_avg_display', 'last_10_cut_pct_display', 'owgr_display', 'value_numeric', 'status']],
         column_config={
             "player_name": st.column_config.TextColumn("Player", width="medium"),
             "appearances": st.column_config.NumberColumn("Apps", format="%d", help="Times played this tournament"),
@@ -725,7 +766,17 @@ def render_field_view(tournament_name, db, fetcher):
             "last_5_cut_pct_display": st.column_config.NumberColumn("L5 Cut%", format="%d%%", help="Percentage of cuts made in last 5 tournaments"),
             "last_10_avg_display": st.column_config.NumberColumn("L10 Avg", format="%.1f", help="Average finish position in last 10 tournaments (all events)"),
             "last_10_cut_pct_display": st.column_config.NumberColumn("L10 Cut%", format="%d%%", help="Percentage of cuts made in last 10 tournaments"),
-            "owgr_numeric": st.column_config.NumberColumn("OWGR", format="%d", help="World ranking (9999 = Not Ranked)"),
+            "owgr_display": st.column_config.TextColumn("OWGR", help="""World ranking (NR = Not Ranked)
+
+⚠️ WARNING INDICATOR: Shows when a player's OWGR is too elite for this tournament's purse tier.
+
+Tournament Tier Warnings:
+• Elite events (Top 15): No warnings - use any player
+• Premium events (16-17): ⚠️ for Top 10 OWGR
+• Standard events (18-32): ⚠️ for Top 25 OWGR
+• Lower-tier events (33+): ⚠️ for Top 50 OWGR
+
+⚠️ = Consider saving this elite player for a higher-purse event!"""),
             "value_numeric": st.column_config.NumberColumn("Value", format="%.1f", help="""REGRESSION-OPTIMIZED VALUE SCORE
 
 📊 MODEL:
