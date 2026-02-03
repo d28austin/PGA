@@ -604,17 +604,25 @@ def render_field_view(tournament_name, db, fetcher):
     # Value metric explanation
     with st.expander("ℹ️ About the Value Score", expanded=False):
         st.markdown("""
-        **Value Score (0-100)** is a comprehensive metric combining multiple factors:
+        **Value Score** is a regression-optimized metric trained on actual tournament results:
 
-        - **Tournament History (40%)**: Cut rate, avg finish, best finish, top 10 rate at THIS tournament
-        - **Recent Form (30%)**: Performance across all tournaments in last 3 years
-        - **Score Quality (15%)**: How their scores compare to field average
-        - **OWGR (15%)**: World ranking as baseline talent indicator
+        **Model Performance:**
+        - Trained on WM Phoenix Open (2020-2024, 397 players)
+        - Ridge Regression R²: 0.097 | Random Forest R²: 0.855
+        - Uses 12 features with proper standardization
 
-        **Score Ranges:**
-        - 🏆 **90-100**: Elite pick - Top performer with strong form
-        - ⭐ **75-89**: Premium pick - Consistent, good value
-        - ✅ **60-74**: Solid pick - Decent history and form
+        **Calculation (weighted combination):**
+        - **Regression Prediction (45%)**: Integrates all 12 features to predict finish position
+        - **OWGR (30%)**: Current world ranking (most important single factor!)
+        - **Recent Form (20%)**: Last 5-10 tournaments across all events
+        - **Tournament History (5%)**: Bonus for course-specific experience
+
+        **Realistic Score Ranges:**
+        - 🏆 **30-50**: Elite pick - Top OWGR, great recent form, strong course history
+        - ⭐ **20-29**: Premium pick - Top-50 OWGR or excellent recent form
+        - ✅ **15-19**: Solid pick - Good ranking or consistent recent performance
+        - 📊 **10-14**: Decent pick - Ranked player with some positive indicators
+        - 📉 **0-9**: Risky pick - Unranked or poor form (use with caution)
         - ⚠️ **40-59**: Risky pick - Limited/inconsistent
         - ❌ **0-39**: Avoid - Poor track record
         """)
@@ -718,37 +726,31 @@ def render_field_view(tournament_name, db, fetcher):
             "last_10_avg_display": st.column_config.NumberColumn("L10 Avg", format="%.1f", help="Average finish position in last 10 tournaments (all events)"),
             "last_10_cut_pct_display": st.column_config.NumberColumn("L10 Cut%", format="%d%%", help="Percentage of cuts made in last 10 tournaments"),
             "owgr_numeric": st.column_config.NumberColumn("OWGR", format="%d", help="World ranking (9999 = Not Ranked)"),
-            "value_numeric": st.column_config.NumberColumn("Value", format="%.1f", help="""COMPREHENSIVE VALUE SCORE (0-100)
+            "value_numeric": st.column_config.NumberColumn("Value", format="%.1f", help="""REGRESSION-OPTIMIZED VALUE SCORE
 
-CALCULATION BREAKDOWN:
+📊 MODEL:
+• Trained on actual tournament results (WM Phoenix Open 2020-2024)
+• Ridge Regression using 12 features with standardization
+• R²: 0.097 (Ridge) / 0.855 (Random Forest)
 
-1️⃣ TOURNAMENT HISTORY (40% weight)
-   • Cut Rate (25%): (Made Cuts ÷ Appearances) × 100
-   • Avg Finish (35%): max(0, 100 - (Avg Position - 1) × 1.4)
-     → 1st place = 100 pts, 10th = 87 pts, 20th = 73 pts
-   • Best Finish (20%): max(0, 100 - (Best Position - 1) × 1.4)
-   • Top 10 Rate (20%): (Top 10s ÷ Appearances) × 100 × 1.5 (capped at 100)
+🧮 CALCULATION (Weighted Combination):
+• Regression Prediction (45%): Predicts finish using 12 features
+• OWGR (30%): World ranking - most important single factor
+• Recent Form (20%): L5/L10 tournaments across all events
+• Course History (5%): Bonus for tournament-specific experience
 
-2️⃣ RECENT FORM (30% weight)
-   • Cut Rate Last 3 Years (30%): % of cuts made across all tournaments
-   • Avg Finish Last 3 Years (70%): Normalized position when made cut
+📈 12 FEATURES INCLUDE:
+Prior tournament stats, recent form metrics, OWGR, cut rates,
+top 10 rates, best finishes, etc.
 
-3️⃣ SCORE QUALITY (15% weight)
-   • 50 + (Field Avg Score to Par - Player Avg Score to Par) × 10
-   • Better than field avg = bonus points, worse = penalty
+🎯 REALISTIC RANGES:
+🏆 30-50: Elite (Top OWGR + great form + course history)
+⭐ 20-29: Premium (Top-50 OWGR or excellent recent form)
+✅ 15-19: Solid (Good ranking or consistent performance)
+📊 10-14: Decent (Ranked player with positives)
+📉 0-9: Risky (Unranked or poor form)
 
-4️⃣ OWGR RANKING (15% weight)
-   • max(0, 100 - (OWGR ÷ 2))
-   • Top 10 world = 95+ pts, Top 50 = 75+ pts, Top 100 = 50+ pts
-
-FINAL = (1×40% + 2×30% + 3×15% + 4×15%)
-
-RANGES:
-🏆 90-100: Elite pick (top performer + strong form)
-⭐ 75-89: Premium pick (consistent, good value)
-✅ 60-74: Solid pick (decent history/form)
-⚠️ 40-59: Risky pick (limited/inconsistent)
-❌ 0-39: Avoid (poor track record)"""),
+💡 KEY INSIGHT: OWGR + Recent Form matter MORE than course history!"""),
             "status": st.column_config.TextColumn("Status", width="small")
         },
         hide_index=True,
