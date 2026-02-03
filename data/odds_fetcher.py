@@ -7,6 +7,7 @@ import requests
 import pandas as pd
 from typing import Dict, List, Optional
 from datetime import datetime
+import os
 
 
 class OddsFetcher:
