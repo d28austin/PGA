@@ -691,20 +691,20 @@ def render_field_view(tournament_name, db, fetcher):
     st.caption("💡 Click on any player row to view detailed analysis below")
 
     st.dataframe(
-        display_df[['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'made_cut_pct', 'last_5_avg_display', 'last_5_cut_pct_display', 'last_10_avg_display', 'last_10_cut_pct_display', 'avg_score_sortable', 'owgr_numeric', 'value_numeric', 'status']],
+        display_df[['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'made_cut_pct', 'avg_score_sortable', 'last_5_avg_display', 'last_5_cut_pct_display', 'last_10_avg_display', 'last_10_cut_pct_display', 'owgr_numeric', 'value_numeric', 'status']],
         column_config={
             "player_name": st.column_config.TextColumn("Player", width="medium"),
             "appearances": st.column_config.NumberColumn("Apps", format="%d", help="Times played this tournament"),
-            "avg_finish": st.column_config.NumberColumn("Avg", format="%.1f", help="Average finish position"),
-            "best_finish": st.column_config.NumberColumn("Best", format="%d", help="Best finish"),
-            "top_10s": st.column_config.NumberColumn("Top 10s", format="%d"),
-            "made_cuts": st.column_config.NumberColumn("Cuts", format="%d"),
+            "avg_finish": st.column_config.NumberColumn("Avg", format="%.1f", help="Average finish position at this tournament"),
+            "best_finish": st.column_config.NumberColumn("Best", format="%d", help="Best finish at this tournament"),
+            "top_10s": st.column_config.NumberColumn("Top 10s", format="%d", help="Top 10 finishes at this tournament"),
+            "made_cuts": st.column_config.NumberColumn("Cuts", format="%d", help="Cuts made at this tournament"),
             "made_cut_pct": st.column_config.NumberColumn("Cut %", format="%d%%", help="Cut percentage at this tournament"),
+            "avg_score_sortable": st.column_config.NumberColumn("Avg Score", format="%d", help="Avg score to par at this tournament (made cuts only)"),
             "last_5_avg_display": st.column_config.NumberColumn("L5 Avg", format="%.1f", help="Average finish position in last 5 tournaments (all events) - VERY RECENT FORM"),
             "last_5_cut_pct_display": st.column_config.NumberColumn("L5 Cut%", format="%d%%", help="Percentage of cuts made in last 5 tournaments"),
             "last_10_avg_display": st.column_config.NumberColumn("L10 Avg", format="%.1f", help="Average finish position in last 10 tournaments (all events)"),
             "last_10_cut_pct_display": st.column_config.NumberColumn("L10 Cut%", format="%d%%", help="Percentage of cuts made in last 10 tournaments"),
-            "avg_score_sortable": st.column_config.NumberColumn("Avg Score", format="%d", help="Avg score to par (made cuts only)"),
             "owgr_numeric": st.column_config.NumberColumn("OWGR", format="%d", help="World ranking (9999 = Not Ranked)"),
             "value_numeric": st.column_config.NumberColumn("Value", format="%.1f", help="""COMPREHENSIVE VALUE SCORE (0-100)
 
