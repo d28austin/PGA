@@ -271,8 +271,15 @@ def main():
             st.info("Please select a tournament from the sidebar")
 
     with tab5:
-        st.header("Recommendations")
-        st.info("Coming soon: AI-powered recommendations based on history and form")
+        if hasattr(st.session_state, 'current_tournament_name') and st.session_state.current_tournament_name:
+            from components.recommendations import render_recommendations
+            render_recommendations(
+                st.session_state.current_tournament_name,
+                st.session_state.db,
+                st.session_state.fetcher
+            )
+        else:
+            st.info("Please select a tournament from the sidebar")
 
     with tab_schedule:
         from components.schedule_view import render_schedule_view
