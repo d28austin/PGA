@@ -135,50 +135,12 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
         - Negative % = Overpriced
         """)
 
-    # API Key input for odds
-    st.subheader("Betting Odds Integration")
+    # Betting Odds - Scraped Data Only
+    st.subheader("Betting Odds")
 
-    # Check for API key in secrets first
-    api_key_from_secrets = None
-    try:
-        if hasattr(st, 'secrets') and 'odds_api' in st.secrets:
-            api_key_from_secrets = st.secrets['odds_api']['api_key']
-    except:
-        pass
-
-    col1, col2 = st.columns([2, 1])
-
-    with col1:
-        if api_key_from_secrets:
-            st.success("🔑 API Key loaded from secrets")
-            api_key = api_key_from_secrets
-            use_live_odds = st.checkbox("Use Live Odds", value=True,
-                                       help="Uncheck to use sample data instead")
-        else:
-            api_key = st.text_input(
-                "The Odds API Key (optional - get free key at the-odds-api.com)",
-                type="password",
-                help="Enter your API key to fetch live betting odds. Free tier: 500 requests/month"
-            )
-            use_live_odds = bool(api_key)
-
-    with col2:
-        if api_key_from_secrets:
-            use_sample_data = not use_live_odds
-        else:
-            use_sample_data = st.checkbox("Use Sample Odds Data", value=True,
-                                          help="Test with sample data if you don't have an API key")
-
-    # Initialize odds fetcher if we have a key or want sample data
-    if api_key or use_sample_data:
-        from data.odds_fetcher import OddsFetcher
-
-        if use_sample_data:
-            odds_fetcher = OddsFetcher(api_key=None)
-            st.info("📊 Using sample betting odds data for demonstration")
-        else:
-            odds_fetcher = OddsFetcher(api_key=api_key)
-            st.success("✅ Connected to betting odds API")
+    # Initialize odds fetcher (no API key needed)
+    from data.odds_fetcher import OddsFetcher
+    odds_fetcher = OddsFetcher(api_key=None)
 
     st.markdown("---")
 
@@ -213,43 +175,23 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
         st.warning(f"No historical data found for {tournament_name}")
         return
 
-    # Get odds data if available
+    # Get odds data from scraped database only
     odds_df = None
-    odds_source = None
+    scraped_time = None
 
-    if odds_fetcher:
-        with st.spinner("Loading betting odds..."):
-            # Try to fetch odds for this specific tournament
-            if use_sample_data:
-                odds_df = odds_fetcher._get_sample_odds(tournament_name)
-                odds_source = "sample_data"
-            else:
-                odds_df = odds_fetcher.get_tournament_odds(tournament_name)
+    with st.spinner("Loading betting odds..."):
+        # Only check for scraped odds in database
+        odds_df = odds_fetcher.get_scraped_odds_from_db(tournament_name)
 
-                if not odds_df.empty:
-                    # Determine the source
-                    if 'scraped_at' in odds_df.columns:
-                        odds_source = "scraped"
-                        scraped_time = pd.to_datetime(odds_df['scraped_at'].iloc[0]).strftime('%B %d, %Y at %I:%M %p')
-                    else:
-                        odds_source = "live_api"
-                else:
-                    st.warning(f"No odds available for '{tournament_name}'.")
-                    odds_df = odds_fetcher._get_sample_odds(tournament_name)
-                    odds_source = "sample_data"
+        if not odds_df.empty:
+            scraped_time = pd.to_datetime(odds_df['scraped_at'].iloc[0]).strftime('%B %d, %Y at %I:%M %p')
 
-    # Display odds source info
-    if odds_df is not None and not odds_df.empty:
+    # Display odds status
+    if not odds_df.empty:
         col1, col2, col3 = st.columns(3)
         with col1:
-            if odds_source == "scraped":
-                st.success(f"📊 Using Scraped Odds")
-                st.caption(f"Last updated: {scraped_time}")
-            elif odds_source == "live_api":
-                st.success(f"🔴 Using Live API Odds")
-            else:
-                st.info(f"📝 Using Sample Odds")
-                st.caption("Run scraper for live data")
+            st.success(f"📊 Using Scraped Odds")
+            st.caption(f"Last updated: {scraped_time}")
 
         with col2:
             bookmakers = odds_df['bookmaker'].unique()
@@ -258,6 +200,16 @@ def render_recommendations(tournament_name: str, db, fetcher, odds_fetcher=None)
 
         with col3:
             st.metric("Players with Odds", odds_df['player_name'].nunique())
+    else:
+        st.warning(f"⚠️ No odds available for '{tournament_name}'")
+        st.info(f"💡 Run the weekly scraper to get odds:\n```bash\npython scrape_weekly_odds.py\n```")
+        st.markdown("The scraper will:")
+        st.markdown("- Open Chrome and navigate to DraftKings")
+        st.markdown("- Let you solve any CAPTCHA")
+        st.markdown("- Scrape all player odds")
+        st.markdown("- Save to database (available here instantly)")
+        st.markdown("---")
+        st.markdown("**Note:** Analysis will continue with historical data only (no odds-based metrics).")
 
     # Merge odds with historical data
     if odds_df is not None and not odds_df.empty:
