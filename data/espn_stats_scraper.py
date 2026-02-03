@@ -239,14 +239,16 @@ class ESPNStatsScaper:
 def main():
     """Main function to scrape ESPN stats"""
     print("\n" + "="*60)
-    print("ESPN PLAYER STATS SCRAPER")
+    print("ESPN PLAYER STATS SCRAPER - FULL HISTORICAL DATA")
     print("="*60)
     print("\nThis will scrape player statistics from ESPN for")
     print("regression analysis and model optimization.")
     print()
 
-    years = [2023, 2024, 2025]
-    print(f"Scraping years: {years}")
+    # Scrape ALL historical data from 2014-2026
+    years = list(range(2014, 2027))  # 2014 through 2026
+    print(f"Scraping years: {years[0]}-{years[-1]} ({len(years)} years)")
+    print(f"This will take approximately {len(years) * 10} seconds (being respectful to ESPN)...")
     print()
 
     scraper = ESPNStatsScaper()
