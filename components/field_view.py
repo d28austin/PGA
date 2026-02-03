@@ -834,20 +834,6 @@ top 10 rates, best finishes, etc.
         no_history_count = len(display_stats[display_stats['appearances'] == 0])
         st.metric("First-Time Players", no_history_count)
 
-    # Top recommendations
-    if len(display_stats[display_stats['status'] == '✅ Available']) > 0:
-        st.divider()
-        st.subheader("🎯 Top Available Players")
-
-        available_stats = display_stats[display_stats['status'] == '✅ Available']
-        available_with_history = available_stats[available_stats['appearances'] > 0]
-
-        if len(available_with_history) > 0:
-            top_by_avg = available_with_history.nsmallest(5, 'avg_finish')
-
-            for i, row in enumerate(top_by_avg.iterrows(), 1):
-                _, player = row
-                st.markdown(f"**{i}. {player['player_name']}** - Avg Finish: {player['avg_finish']:.1f}, Best: {int(player['best_finish']) if pd.notna(player['best_finish']) else 'N/A'}, Apps: {int(player['appearances'])}")
 
 
 def render_player_quick_analysis(player_name, tournament_name, db, field_history_df, tournament_par):
