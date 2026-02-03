@@ -207,12 +207,11 @@ def main():
             st.rerun()
 
     # Main content area with tabs
-    tab0, tab1, tab2, tab3, tab4, tab5, tab_schedule, tab_players = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab_schedule, tab_players = st.tabs([
         "🏌️ In the Field",
         "📊 Tournament History",
         "👤 Player Deep Dive",
         "📈 Recent Form",
-        "⚖️ Compare Players",
         "💰 Betting Odds",
         "📅 2026 Schedule",
         "👥 All Players"
@@ -260,17 +259,6 @@ def main():
         render_recent_form(st.session_state.db)
 
     with tab4:
-        st.header("Player Comparison")
-        if hasattr(st.session_state, 'current_tournament_name') and st.session_state.current_tournament_name:
-            from components.comparison import render_comparison_view
-            render_comparison_view(
-                st.session_state.current_tournament_name,
-                st.session_state.db
-            )
-        else:
-            st.info("Please select a tournament from the sidebar")
-
-    with tab5:
         if hasattr(st.session_state, 'current_tournament_name') and st.session_state.current_tournament_name:
             from components.recommendations import render_recommendations
             render_recommendations(
