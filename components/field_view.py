@@ -1,6 +1,7 @@
 """
 Tournament Field View Component
 Shows analysis for players in the current tournament field
+Uses unified ValueCalculator with regression-optimized weights
 """
 
 import streamlit as st
@@ -9,6 +10,7 @@ import plotly.express as px
 import sqlite3
 from utils.fetch_tournament_field import fetch_tournament_field, fetch_field_by_tournament_id
 from datetime import datetime
+from components.value_calculator import ValueCalculator
 
 
 def render_field_view(tournament_name, db, fetcher):
@@ -435,68 +437,32 @@ def render_field_view(tournament_name, db, fetcher):
 
     conn_recent.close()
 
-    # Calculate comprehensive value metric (0-100 scale)
+    # Calculate comprehensive value metric using unified ValueCalculator
+    value_calc = ValueCalculator()
+
     def calculate_value_score(row):
-        # Component 1: Tournament History Score (40% weight)
-        appearances = row['appearances']
-        if appearances == 0:
-            return 0  # No history = no value
-
-        # Cut Rate (25% of tournament score)
-        cut_rate = (row['made_cuts'] / appearances) * 100
-
-        # Avg Finish Score (35% of tournament score)
-        avg_finish_score = max(0, 100 - (row['avg_finish'] - 1) * 1.4) if row['avg_finish'] < 999 else 0
-
-        # Best Finish Score (20% of tournament score)
-        best_finish_score = max(0, 100 - (row['best_finish'] - 1) * 1.4) if row['best_finish'] < 999 else 0
-
-        # Top 10 Rate (20% of tournament score)
-        top10_rate = min((row['top_10s'] / appearances * 100 * 1.5), 100)
-
-        tournament_score = (
-            cut_rate * 0.25 +
-            avg_finish_score * 0.35 +
-            best_finish_score * 0.20 +
-            top10_rate * 0.20
-        )
-
-        # Component 2: Recent Form Score (30% weight)
+        """
+        Uses unified ValueCalculator with regression-optimized weights
+        Maps field view data structure to ValueCalculator expected format
+        """
+        # Map field view columns to ValueCalculator expected names
         player_name = row['player_name']
         recent_data = recent_form_data.get(player_name, {'recent_cut_rate': 0, 'recent_avg_finish': 999})
 
-        recent_cut_score = recent_data['recent_cut_rate']  # 0-100
-        recent_avg = recent_data['recent_avg_finish']
-        recent_finish_score = max(0, 100 - (recent_avg - 1) * 1.4) if recent_avg < 999 else 0
+        player_data = pd.Series({
+            'events': row['appearances'],
+            'wins': row['wins'],
+            'top_10s': row['top_10s'],
+            'avg_finish': row['avg_finish'] if row['avg_finish'] < 999 else None,
+            'best_finish': row['best_finish'] if row['best_finish'] < 999 else 999,
+            'made_cuts': row['made_cuts'],
+            'recent_avg_finish': recent_data['recent_avg_finish'],
+            'recent_cut_rate': recent_data['recent_cut_rate'] / 100 if 'recent_cut_rate' in recent_data else 0,
+            'owgr_numeric': row['owgr_numeric']
+        })
 
-        recent_form_score = (
-            recent_cut_score * 0.30 +
-            recent_finish_score * 0.70
-        )
-
-        # Component 3: Score Quality vs Field (15% weight)
-        if pd.notna(row['avg_score_to_par']):
-            score_quality = 50 + (field_avg_score - row['avg_score_to_par']) * 10
-            score_quality = max(0, min(100, score_quality))
-        else:
-            score_quality = 50  # Neutral if no data
-
-        # Component 4: OWGR Score (15% weight)
-        owgr = row['owgr_numeric']
-        if owgr < 9999:
-            owgr_score = max(0, 100 - (owgr / 2))
-        else:
-            owgr_score = 0
-
-        # Weighted combination
-        value = (
-            tournament_score * 0.40 +
-            recent_form_score * 0.30 +
-            score_quality * 0.15 +
-            owgr_score * 0.15
-        )
-
-        return round(value, 1)
+        result = value_calc.calculate_value(player_data)
+        return round(result['final_value_score'], 1)
 
     player_stats['value_numeric'] = player_stats.apply(calculate_value_score, axis=1)
     player_stats['value'] = player_stats['value_numeric'].apply(
