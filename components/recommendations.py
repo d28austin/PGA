@@ -63,15 +63,65 @@ def calculate_enhanced_value(player_data: pd.Series, odds: Optional[float] = Non
     }
 
     # Add odds-based metrics if available
-    if odds is not None:
+    if odds is not None and pd.notna(odds):
         implied_prob = american_to_probability(odds)
         decimal_odds = american_to_decimal(odds)
 
-        # Estimate win probability from base value (rough approximation)
-        estimated_win_prob = base_value / 500  # Scale to reasonable probability
+        # Estimate win probability from historical performance
+        # Use more realistic estimation based on actual performance
+        estimated_win_prob = 0.0
 
-        # Calculate value edge
-        value_edge = ((estimated_win_prob - implied_prob) / implied_prob) * 100 if implied_prob > 0 else 0
+        # Base estimation on historical performance
+        events = player_data.get('events', 0)
+        wins = player_data.get('wins', 0)
+
+        if events > 0:
+            # Historical win rate is primary signal
+            win_rate = wins / events
+            # Boost for consistent top 10s
+            top_10_rate = player_data.get('top_10s', 0) / events if events > 0 else 0
+
+            # Weighted estimation (historical performance weighted heavily)
+            estimated_win_prob = (win_rate * 0.7) + (top_10_rate * 0.15) + (base_value / 1000 * 0.15)
+            estimated_win_prob = max(0.001, min(estimated_win_prob, 0.30))  # Cap between 0.1% and 30%
+        else:
+            # No history - use base value with heavy discount
+            estimated_win_prob = base_value / 2000  # More conservative
+            estimated_win_prob = max(0.001, min(estimated_win_prob, 0.05))  # Cap at 5%
+
+        # Calculate value edge with protection against extreme values
+        if implied_prob > 0.001:  # Only calculate if odds are reasonable (better than +100000)
+            # Use absolute difference for long shots to prevent explosion
+            if implied_prob < 0.02:  # Very long odds (worse than +5000)
+                # For long shots, use absolute difference scaled
+                value_edge = (estimated_win_prob - implied_prob) * 1000  # Scale to percentage
+            else:
+                # For reasonable odds, use percentage difference
+                value_edge = ((estimated_win_prob - implied_prob) / implied_prob) * 100
+
+            # Cap value edge to prevent extreme scores
+            value_edge = max(-100, min(value_edge, 200))  # Cap between -100% and +200%
+        else:
+            value_edge = 0  # Ignore unrealistic odds
+
+        # Calculate final value score
+        # Historical performance should be the primary driver, odds are secondary
+        odds_adjustment = 0
+
+        if value_edge > 50:  # Significantly underpriced
+            odds_adjustment = 20
+        elif value_edge > 20:  # Good value
+            odds_adjustment = 10
+        elif value_edge > 0:  # Slight value
+            odds_adjustment = 5
+        elif value_edge < -50:  # Significantly overpriced
+            odds_adjustment = -15
+        elif value_edge < -20:  # Overpriced
+            odds_adjustment = -10
+        elif value_edge < 0:  # Slightly overpriced
+            odds_adjustment = -5
+
+        final_value_score = base_value + odds_adjustment
 
         result.update({
             'odds': odds,
@@ -79,7 +129,7 @@ def calculate_enhanced_value(player_data: pd.Series, odds: Optional[float] = Non
             'decimal_odds': decimal_odds,
             'estimated_win_prob': estimated_win_prob,
             'value_edge': value_edge,
-            'final_value_score': base_value + (value_edge * 2)  # Weight the edge
+            'final_value_score': final_value_score
         })
     else:
         result['final_value_score'] = base_value
