@@ -349,6 +349,9 @@ def render_field_view(tournament_name, db, fetcher):
     field_history_df['made_cut'] = (field_history_df['position_numeric'] <= 70) & (field_history_df['total_score_numeric'] >= min_reasonable_score)
 
     # Calculate stats for players in field
+    def calculate_wins(positions):
+        return (positions == 1).sum()
+
     def calculate_top_10s(positions):
         return (positions <= 10).sum()
 
@@ -364,14 +367,14 @@ def render_field_view(tournament_name, db, fetcher):
     # Aggregate stats
     player_stats = field_history_df.groupby('player_name').agg({
         'year': 'count',  # Count ALL appearances including missed cuts
-        'position_numeric': ['mean', 'min', calculate_top_10s, calculate_made_cuts],
+        'position_numeric': ['mean', 'min', calculate_wins, calculate_top_10s, calculate_made_cuts],
         'earnings_numeric': 'sum'
     }).reset_index()
 
     avg_scores = field_history_df.groupby('player_name').apply(calculate_avg_score_made_cuts).reset_index()
     avg_scores.columns = ['player_name', 'avg_score_to_par']
 
-    player_stats.columns = ['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'total_earnings']
+    player_stats.columns = ['player_name', 'appearances', 'avg_finish', 'best_finish', 'wins', 'top_10s', 'made_cuts', 'total_earnings']
     player_stats = player_stats.merge(avg_scores, on='player_name', how='left')
 
     # Add players with no history
@@ -384,6 +387,7 @@ def render_field_view(tournament_name, db, fetcher):
             'appearances': 0,
             'avg_finish': None,
             'best_finish': None,
+            'wins': 0,
             'top_10s': 0,
             'made_cuts': 0,
             'total_earnings': 0,
@@ -426,13 +430,19 @@ def render_field_view(tournament_name, db, fetcher):
             recent_df['made_cut'] = recent_df['position_numeric'] <= 70
 
             recent_form_data[player] = {
+                'recent_events': len(recent_df),
                 'recent_cut_rate': (recent_df['made_cut'].sum() / len(recent_df) * 100) if len(recent_df) > 0 else 0,
-                'recent_avg_finish': recent_df[recent_df['made_cut']]['position_numeric'].mean() if recent_df['made_cut'].any() else 999
+                'recent_avg_finish': recent_df[recent_df['made_cut']]['position_numeric'].mean() if recent_df['made_cut'].any() else 999,
+                'recent_top10s': (recent_df['position_numeric'] <= 10).sum(),
+                'recent_made_cuts': recent_df['made_cut'].sum()
             }
         else:
             recent_form_data[player] = {
+                'recent_events': 0,
                 'recent_cut_rate': 0,
-                'recent_avg_finish': 999
+                'recent_avg_finish': 999,
+                'recent_top10s': 0,
+                'recent_made_cuts': 0
             }
 
     conn_recent.close()
@@ -447,17 +457,26 @@ def render_field_view(tournament_name, db, fetcher):
         """
         # Map field view columns to ValueCalculator expected names
         player_name = row['player_name']
-        recent_data = recent_form_data.get(player_name, {'recent_cut_rate': 0, 'recent_avg_finish': 999})
+        recent_data = recent_form_data.get(player_name, {
+            'recent_events': 0,
+            'recent_cut_rate': 0,
+            'recent_avg_finish': 999,
+            'recent_top10s': 0,
+            'recent_made_cuts': 0
+        })
 
         player_data = pd.Series({
             'events': row['appearances'],
             'wins': row['wins'],
             'top_10s': row['top_10s'],
-            'avg_finish': row['avg_finish'] if row['avg_finish'] < 999 else None,
-            'best_finish': row['best_finish'] if row['best_finish'] < 999 else 999,
+            'avg_finish': row['avg_finish'] if pd.notna(row['avg_finish']) and row['avg_finish'] < 999 else None,
+            'best_finish': row['best_finish'] if pd.notna(row['best_finish']) and row['best_finish'] < 999 else 999,
             'made_cuts': row['made_cuts'],
-            'recent_avg_finish': recent_data['recent_avg_finish'],
-            'recent_cut_rate': recent_data['recent_cut_rate'] / 100 if 'recent_cut_rate' in recent_data else 0,
+            'recent_avg_finish': recent_data.get('recent_avg_finish', 999),
+            'recent_events': recent_data.get('recent_events', 0),
+            'recent_cut_rate': recent_data.get('recent_cut_rate', 0) / 100,
+            'recent_top10s': recent_data.get('recent_top10s', 0),
+            'recent_made_cuts': recent_data.get('recent_made_cuts', 0),
             'owgr_numeric': row['owgr_numeric']
         })
 
