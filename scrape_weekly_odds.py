@@ -88,8 +88,21 @@ class WeeklyOddsScraper:
 
             # Wait for user if CAPTCHA appears
             print("\nIf you see a CAPTCHA, please solve it now...")
-            print("Waiting 10 seconds for page to fully load...")
-            time.sleep(10)
+            print("Waiting for page to fully load...")
+
+            # Wait longer and look for specific elements
+            try:
+                # Wait up to 30 seconds for odds to appear
+                WebDriverWait(self.driver, 30).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "sportsbook-outcome-cell"))
+                )
+                print("Page loaded - odds elements found!")
+            except:
+                print("WARNING: Odds elements not found yet, waiting more...")
+                time.sleep(10)
+
+            # Give extra time for all odds to render
+            time.sleep(5)
 
             # Try to find tournament name
             try:
@@ -112,11 +125,20 @@ class WeeklyOddsScraper:
                     break
                 last_height = new_height
 
+            # Save page source for debugging
+            page_source = self.driver.page_source
+            try:
+                debug_file = f"debug_page_source_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+                with open(debug_file, 'w', encoding='utf-8') as f:
+                    f.write(page_source)
+                print(f"Page source saved to: {debug_file}")
+            except:
+                pass
+
             # Parse odds from page
             odds_list = []
 
             # Method 1: Try to find odds in page source (JSON data)
-            page_source = self.driver.page_source
             if 'outcomes' in page_source or 'oddsAmerican' in page_source:
                 # Try to extract JSON from script tags
                 scripts = self.driver.find_elements(By.TAG_NAME, "script")
@@ -139,6 +161,29 @@ class WeeklyOddsScraper:
             if not odds_list:
                 print("Parsing HTML elements...")
                 odds_list = self._parse_dk_html_elements()
+
+            # Method 3: If still nothing, take screenshot and ask user
+            if not odds_list:
+                print("\n" + "="*60)
+                print("Could not find odds automatically.")
+                print("The page is still open in Chrome.")
+                print("\nDEBUG TIPS:")
+                print("1. Look at the Chrome window - do you see odds?")
+                print("2. Right-click on a player name -> Inspect")
+                print("3. Note the class names used")
+                print("="*60)
+
+                # Take screenshot for debugging
+                try:
+                    screenshot_path = f"debug_screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                    self.driver.save_screenshot(screenshot_path)
+                    print(f"\nScreenshot saved to: {screenshot_path}")
+                except:
+                    pass
+
+                user_input = input("\nWould you like to try manual extraction? (y/n): ")
+                if user_input.lower() == 'y':
+                    odds_list = self._manual_extraction_prompt()
 
             if odds_list:
                 df = pd.DataFrame(odds_list)
@@ -204,42 +249,187 @@ class WeeklyOddsScraper:
         """Parse DraftKings HTML for visible odds"""
         odds_list = []
 
-        try:
-            # Wait for odds elements to be visible
-            WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "sportsbook-outcome-cell"))
-            )
+        print("\nAttempting to parse HTML elements...")
 
-            # Find all outcome cells
-            outcome_cells = self.driver.find_elements(By.CLASS_NAME, "sportsbook-outcome-cell")
+        # Try multiple selector strategies
+        strategies = [
+            {
+                'name': 'Strategy 1: sportsbook-outcome-cell',
+                'container': 'sportsbook-outcome-cell',
+                'name_selector': 'sportsbook-outcome-cell__label',
+                'odds_selector': 'sportsbook-odds'
+            },
+            {
+                'name': 'Strategy 2: outcome-cell variations',
+                'container': 'outcome-cell',
+                'name_selector': 'outcome-cell__label',
+                'odds_selector': 'outcome-cell__odds'
+            },
+            {
+                'name': 'Strategy 3: Generic approach',
+                'container': None,  # Will use different approach
+                'name_selector': None,
+                'odds_selector': None
+            }
+        ]
 
-            for cell in outcome_cells:
+        for strategy in strategies:
+            print(f"\nTrying {strategy['name']}...")
+
+            if strategy['container']:
                 try:
-                    # Get player name
-                    player_element = cell.find_element(By.CLASS_NAME, "sportsbook-outcome-cell__label")
-                    player_name = player_element.text.strip()
+                    # Find all outcome cells
+                    outcome_cells = self.driver.find_elements(By.CLASS_NAME, strategy['container'])
+                    print(f"  Found {len(outcome_cells)} outcome cells")
 
-                    # Get odds
-                    odds_element = cell.find_element(By.CLASS_NAME, "sportsbook-odds")
-                    odds_text = odds_element.text.strip()
+                    if len(outcome_cells) > 0:
+                        for i, cell in enumerate(outcome_cells):
+                            try:
+                                # Get player name - try multiple methods
+                                player_name = None
+                                try:
+                                    player_element = cell.find_element(By.CLASS_NAME, strategy['name_selector'])
+                                    player_name = player_element.text.strip()
+                                except:
+                                    # Try aria-label or other attributes
+                                    try:
+                                        player_name = cell.get_attribute('aria-label')
+                                    except:
+                                        pass
 
-                    # Parse odds (e.g., "+700" or "−110")
-                    if odds_text:
-                        odds_text = odds_text.replace('−', '-').replace('+', '')
-                        odds = int(odds_text)
+                                # Get odds - try multiple methods
+                                odds_text = None
+                                try:
+                                    odds_element = cell.find_element(By.CLASS_NAME, strategy['odds_selector'])
+                                    odds_text = odds_element.text.strip()
+                                except:
+                                    # Try getting from button text or other elements
+                                    try:
+                                        button = cell.find_element(By.TAG_NAME, 'button')
+                                        odds_text = button.text.strip()
+                                    except:
+                                        pass
 
-                        odds_list.append({
-                            'player_name': player_name,
-                            'odds': odds,
-                            'bookmaker': 'DraftKings'
-                        })
-                except:
+                                if player_name and odds_text:
+                                    # Parse odds
+                                    # Remove non-numeric characters except + and -
+                                    import re
+                                    odds_match = re.search(r'([+\-]?\d+)', odds_text)
+                                    if odds_match:
+                                        odds = int(odds_match.group(1))
+
+                                        odds_list.append({
+                                            'player_name': player_name,
+                                            'odds': odds,
+                                            'bookmaker': 'DraftKings'
+                                        })
+
+                                        if i < 3:  # Show first 3 for debugging
+                                            print(f"    Found: {player_name} = {odds:+d}")
+
+                            except Exception as e:
+                                continue
+
+                        if odds_list:
+                            print(f"  SUCCESS! Found {len(odds_list)} odds")
+                            return odds_list
+
+                except Exception as e:
+                    print(f"  Failed: {e}")
                     continue
+            else:
+                # Strategy 3: Generic approach - find all elements with odds-like text
+                print("  Trying generic text search...")
+                try:
+                    # Get all text from page
+                    all_text = self.driver.find_element(By.TAG_NAME, 'body').text
 
-        except Exception as e:
-            print(f"HTML parsing error: {e}")
+                    # Look for patterns like "Player Name +700"
+                    import re
+                    # Pattern: any text followed by American odds
+                    pattern = r'([A-Z][a-zA-Z\s\.]+?)\s+([+\-]\d{3,5})'
+                    matches = re.findall(pattern, all_text)
 
+                    for player, odds_str in matches:
+                        player = player.strip()
+                        try:
+                            odds = int(odds_str)
+                            odds_list.append({
+                                'player_name': player,
+                                'odds': odds,
+                                'bookmaker': 'DraftKings'
+                            })
+                        except:
+                            continue
+
+                    if odds_list:
+                        # Remove duplicates
+                        seen = set()
+                        unique_odds = []
+                        for item in odds_list:
+                            key = item['player_name']
+                            if key not in seen:
+                                seen.add(key)
+                                unique_odds.append(item)
+
+                        print(f"  Found {len(unique_odds)} unique odds via text search")
+                        return unique_odds
+
+                except Exception as e:
+                    print(f"  Failed: {e}")
+
+        print("\nAll strategies failed")
         return odds_list
+
+    def _manual_extraction_prompt(self):
+        """Prompt user to manually provide class names from inspection"""
+        print("\n" + "="*60)
+        print("MANUAL EXTRACTION MODE")
+        print("="*60)
+        print("\nInstructions:")
+        print("1. In Chrome, right-click on a player's name")
+        print("2. Select 'Inspect' or 'Inspect Element'")
+        print("3. Look for the class name (e.g., 'player-name-v2' or 'outcome-label')")
+        print("4. Do the same for the odds number")
+        print()
+
+        player_class = input("Enter the class name for PLAYER NAME (or press Enter to skip): ").strip()
+        odds_class = input("Enter the class name for ODDS NUMBER (or press Enter to skip): ").strip()
+
+        if player_class and odds_class:
+            print("\nAttempting extraction with your class names...")
+            try:
+                odds_list = []
+                players = self.driver.find_elements(By.CLASS_NAME, player_class)
+                odds_elements = self.driver.find_elements(By.CLASS_NAME, odds_class)
+
+                print(f"Found {len(players)} players and {len(odds_elements)} odds elements")
+
+                for player, odds_elem in zip(players, odds_elements):
+                    try:
+                        player_name = player.text.strip()
+                        odds_text = odds_elem.text.strip()
+
+                        import re
+                        odds_match = re.search(r'([+\-]?\d+)', odds_text)
+                        if odds_match and player_name:
+                            odds = int(odds_match.group(1))
+                            odds_list.append({
+                                'player_name': player_name,
+                                'odds': odds,
+                                'bookmaker': 'DraftKings'
+                            })
+                    except:
+                        continue
+
+                if odds_list:
+                    print(f"SUCCESS! Extracted {len(odds_list)} odds")
+                    return odds_list
+
+            except Exception as e:
+                print(f"Manual extraction failed: {e}")
+
+        return []
 
     def save_to_csv(self, df: pd.DataFrame, filename: str = None):
         """Save odds to CSV file"""
