@@ -415,6 +415,7 @@ def render_field_view(tournament_name, db, fetcher):
 
     recent_form_data = {}
     for player in player_stats['player_name']:
+        # Get all recent events (last 2-3 years for value calculation)
         recent_df = pd.read_sql("""
             SELECT position, year
             FROM tournament_results
@@ -422,7 +423,11 @@ def render_field_view(tournament_name, db, fetcher):
             AND year >= ?
             AND position IS NOT NULL
             AND position != 'None'
+            ORDER BY year DESC, tournament_id DESC
         """, conn_recent, params=(player, min_year))
+
+        # Get last 10 tournaments specifically for display metrics
+        last_10_df = recent_df.head(10) if not recent_df.empty else pd.DataFrame()
 
         if not recent_df.empty:
             recent_df['position_clean'] = recent_df['position'].astype(str).str.replace('T', '').str.replace('T-', '')
@@ -444,6 +449,26 @@ def render_field_view(tournament_name, db, fetcher):
                 'recent_top10s': 0,
                 'recent_made_cuts': 0
             }
+
+        # Calculate Last 10 specific metrics
+        if not last_10_df.empty:
+            last_10_df['position_clean'] = last_10_df['position'].astype(str).str.replace('T', '').str.replace('T-', '')
+            last_10_df['position_numeric'] = pd.to_numeric(last_10_df['position_clean'], errors='coerce')
+            last_10_df['made_cut'] = last_10_df['position_numeric'] <= 70
+
+            # Average finish in last 10 (including missed cuts as high number)
+            avg_finish_last_10 = last_10_df['position_numeric'].mean() if len(last_10_df) > 0 else None
+
+            # Cut percentage in last 10
+            cut_pct_last_10 = (last_10_df['made_cut'].sum() / len(last_10_df) * 100) if len(last_10_df) > 0 else 0
+
+            recent_form_data[player]['last_10_avg'] = avg_finish_last_10
+            recent_form_data[player]['last_10_cut_pct'] = cut_pct_last_10
+            recent_form_data[player]['last_10_count'] = len(last_10_df)
+        else:
+            recent_form_data[player]['last_10_avg'] = None
+            recent_form_data[player]['last_10_cut_pct'] = 0
+            recent_form_data[player]['last_10_count'] = 0
 
     conn_recent.close()
 
@@ -492,6 +517,17 @@ def render_field_view(tournament_name, db, fetcher):
     used_players = db.get_used_players()
     player_stats['status'] = player_stats['player_name'].apply(
         lambda x: '🚫 Used' if x in used_players else '✅ Available'
+    )
+
+    # Add Last 10 tournament metrics for quick form assessment
+    player_stats['last_10_avg'] = player_stats['player_name'].apply(
+        lambda x: recent_form_data.get(x, {}).get('last_10_avg')
+    )
+    player_stats['last_10_cut_pct'] = player_stats['player_name'].apply(
+        lambda x: recent_form_data.get(x, {}).get('last_10_cut_pct', 0)
+    )
+    player_stats['last_10_count'] = player_stats['player_name'].apply(
+        lambda x: recent_form_data.get(x, {}).get('last_10_count', 0)
     )
 
     # Sort by value score (highest first)
@@ -578,6 +614,12 @@ def render_field_view(tournament_name, db, fetcher):
     display_df['made_cut_pct'] = (display_df['made_cuts'] / display_df['appearances'] * 100).round(0).astype('Int64')
     display_df['made_cut_pct'] = display_df['made_cut_pct'].apply(lambda x: x if pd.notna(x) else 0)
 
+    # Format Last 10 metrics
+    display_df['last_10_avg_display'] = display_df['last_10_avg'].apply(
+        lambda x: round(x, 1) if pd.notna(x) else None
+    )
+    display_df['last_10_cut_pct_display'] = display_df['last_10_cut_pct'].round(0).astype('Int64')
+
     # Reset index so we can properly access rows by position
     display_df = display_df.reset_index(drop=True)
 
@@ -585,7 +627,7 @@ def render_field_view(tournament_name, db, fetcher):
     st.caption("💡 Click on any player row to view detailed analysis below")
 
     st.dataframe(
-        display_df[['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'made_cut_pct', 'avg_score_sortable', 'owgr_numeric', 'value_numeric', 'status']],
+        display_df[['player_name', 'appearances', 'avg_finish', 'best_finish', 'top_10s', 'made_cuts', 'made_cut_pct', 'last_10_avg_display', 'last_10_cut_pct_display', 'avg_score_sortable', 'owgr_numeric', 'value_numeric', 'status']],
         column_config={
             "player_name": st.column_config.TextColumn("Player", width="medium"),
             "appearances": st.column_config.NumberColumn("Apps", format="%d", help="Times played this tournament"),
@@ -593,7 +635,9 @@ def render_field_view(tournament_name, db, fetcher):
             "best_finish": st.column_config.NumberColumn("Best", format="%d", help="Best finish"),
             "top_10s": st.column_config.NumberColumn("Top 10s", format="%d"),
             "made_cuts": st.column_config.NumberColumn("Cuts", format="%d"),
-            "made_cut_pct": st.column_config.NumberColumn("Cut %", format="%d%%"),
+            "made_cut_pct": st.column_config.NumberColumn("Cut %", format="%d%%", help="Cut percentage at this tournament"),
+            "last_10_avg_display": st.column_config.NumberColumn("L10 Avg", format="%.1f", help="Average finish position in last 10 tournaments (all events)"),
+            "last_10_cut_pct_display": st.column_config.NumberColumn("L10 Cut%", format="%d%%", help="Percentage of cuts made in last 10 tournaments"),
             "avg_score_sortable": st.column_config.NumberColumn("Avg Score", format="%d", help="Avg score to par (made cuts only)"),
             "owgr_numeric": st.column_config.NumberColumn("OWGR", format="%d", help="World ranking (9999 = Not Ranked)"),
             "value_numeric": st.column_config.NumberColumn("Value", format="%.1f", help="""COMPREHENSIVE VALUE SCORE (0-100)
