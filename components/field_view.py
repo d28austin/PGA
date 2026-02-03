@@ -691,7 +691,7 @@ def render_field_view(tournament_name, db, fetcher):
     st.caption("💡 Click on any player row to view detailed analysis below")
 
     # Add column group headers to clarify data sources
-    col_header1, col_header2, col_header3 = st.columns([0.45, 0.35, 0.20])
+    col_header1, col_header2, col_header3 = st.columns([0.52, 0.30, 0.18])
     with col_header1:
         st.markdown(f"**📍 {tournament_name} Performance**")
         st.caption("_Player through Avg Score columns_")
