@@ -100,14 +100,17 @@ class OddsFetcher:
         """
         if not self.api_key:
             print("No API key provided. Using sample data.")
-            return self._get_sample_odds()
+            return self._get_sample_odds(tournament_name)
 
         # Get sport key for this tournament
         sport_key = self.get_sport_key_for_tournament(tournament_name)
 
         if not sport_key:
-            print(f"No odds available for '{tournament_name}'. Supported: Masters, PGA Championship, US Open, The Open")
-            return self._get_sample_odds()
+            # For non-major tournaments, use sample data or scraper
+            print(f"'{tournament_name}' is not a major championship.")
+            print("The Odds API only covers: Masters, PGA Championship, US Open, The Open")
+            print("Using sample data for demonstration...")
+            return self._get_sample_odds(tournament_name)
 
         try:
             url = f"{self.base_url}/sports/{sport_key}/odds"
@@ -235,27 +238,60 @@ class OddsFetcher:
 
         return top_10_df
 
-    def _get_sample_odds(self) -> pd.DataFrame:
+    def _get_sample_odds(self, tournament_name: str = None) -> pd.DataFrame:
         """
         Get sample odds data for testing (when no API key is provided)
+
+        Args:
+            tournament_name: Name of tournament (to provide tournament-specific samples)
 
         Returns:
             DataFrame with sample odds
         """
-        sample_data = [
-            {'player_name': 'Scottie Scheffler', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 450, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Rory McIlroy', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 800, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Jon Rahm', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 900, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Viktor Hovland', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1200, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Xander Schauffele', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1400, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Patrick Cantlay', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1600, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Collin Morikawa', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1800, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Max Homa', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 2000, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Scottie Scheffler', 'bookmaker': 'FanDuel', 'market': 'outrights', 'odds': 425, 'last_update': datetime.now().isoformat()},
-            {'player_name': 'Rory McIlroy', 'bookmaker': 'FanDuel', 'market': 'outrights', 'odds': 850, 'last_update': datetime.now().isoformat()},
-        ]
+        # Phoenix Open specific odds
+        if tournament_name and 'phoenix' in tournament_name.lower():
+            sample_data = [
+                # DraftKings
+                {'player_name': 'Scottie Scheffler', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 700, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Xander Schauffele', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 900, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Hideki Matsuyama', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 1200, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Patrick Cantlay', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 1400, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Collin Morikawa', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 1600, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Viktor Hovland', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 1800, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Tony Finau', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 2000, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Max Homa', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 2200, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Sam Burns', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 2500, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Jordan Spieth', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 2800, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Sahith Theegala', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 3500, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Will Zalatoris', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 4000, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Rickie Fowler', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 4500, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Justin Thomas', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 5500, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Brooks Koepka', 'bookmaker': 'DraftKings', 'market': 'tournament_winner', 'odds': 7000, 'last_update': datetime.now().isoformat()},
 
-        print("Using sample odds data (no API key provided)")
+                # FanDuel (slightly different odds)
+                {'player_name': 'Scottie Scheffler', 'bookmaker': 'FanDuel', 'market': 'tournament_winner', 'odds': 650, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Xander Schauffele', 'bookmaker': 'FanDuel', 'market': 'tournament_winner', 'odds': 950, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Hideki Matsuyama', 'bookmaker': 'FanDuel', 'market': 'tournament_winner', 'odds': 1100, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Patrick Cantlay', 'bookmaker': 'FanDuel', 'market': 'tournament_winner', 'odds': 1300, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Collin Morikawa', 'bookmaker': 'FanDuel', 'market': 'tournament_winner', 'odds': 1500, 'last_update': datetime.now().isoformat()},
+            ]
+            print(f"Using sample WM Phoenix Open odds (regular tour events not available via API)")
+        else:
+            # Generic sample odds
+            sample_data = [
+                {'player_name': 'Scottie Scheffler', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 450, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Rory McIlroy', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 800, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Jon Rahm', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 900, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Viktor Hovland', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1200, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Xander Schauffele', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1400, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Patrick Cantlay', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1600, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Collin Morikawa', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 1800, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Max Homa', 'bookmaker': 'DraftKings', 'market': 'outrights', 'odds': 2000, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Scottie Scheffler', 'bookmaker': 'FanDuel', 'market': 'outrights', 'odds': 425, 'last_update': datetime.now().isoformat()},
+                {'player_name': 'Rory McIlroy', 'bookmaker': 'FanDuel', 'market': 'outrights', 'odds': 850, 'last_update': datetime.now().isoformat()},
+            ]
+            print("Using sample odds data (no API key provided)")
+
         return pd.DataFrame(sample_data)
 
     @staticmethod
