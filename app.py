@@ -62,6 +62,36 @@ def main():
         if not st.session_state.data_loaded:
             load_initial_data()
 
+        # Show last updated timestamps
+        try:
+            import sqlite3 as _sqlite3
+            from datetime import datetime as _dt
+            _conn = _sqlite3.connect(st.session_state.db.db_path)
+            _cur = _conn.cursor()
+            _cur.execute("SELECT MAX(last_updated) FROM tournament_results")
+            _data_updated = _cur.fetchone()[0]
+            _cur.execute("SELECT MAX(last_updated) FROM owgr_rankings")
+            _owgr_updated = _cur.fetchone()[0]
+            _conn.close()
+
+            if _data_updated:
+                _dt_parsed = _dt.fromisoformat(str(_data_updated).replace('T', ' ').split('.')[0])
+                st.caption(f"Data last updated: {_dt_parsed.strftime('%b %d, %Y %I:%M %p')}")
+            if _owgr_updated:
+                _owgr_parsed = _dt.fromisoformat(str(_owgr_updated).replace('T', ' ').split('.')[0])
+                st.caption(f"OWGR last updated: {_owgr_parsed.strftime('%b %d, %Y %I:%M %p')}")
+        except Exception:
+            pass
+
+        # App last updated from git commit or file modification
+        try:
+            import os
+            _app_mtime = os.path.getmtime(os.path.abspath(__file__))
+            _app_dt = _dt.fromtimestamp(_app_mtime)
+            st.caption(f"App last updated: {_app_dt.strftime('%b %d, %Y %I:%M %p')}")
+        except Exception:
+            pass
+
         st.divider()
 
         # Tournament selectors - two options: alphabetical or by date

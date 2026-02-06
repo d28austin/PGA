@@ -146,6 +146,7 @@ class ESPNPGAFetcher:
                 return pd.DataFrame()
 
             event = data['events'][0]
+            tournament_name = event.get('name', '')
 
             if 'competitions' not in event or len(event['competitions']) == 0:
                 print(f"No competitions found for event {event_id}")
@@ -201,6 +202,7 @@ class ESPNPGAFetcher:
                         'total_score': total_score,
                         'earnings': earnings,
                         'tournament_id': event_id,
+                        'tournament_name': tournament_name,
                         'year': year
                     })
 

@@ -328,15 +328,14 @@ def render_field_view(tournament_name, db, fetcher):
     year_tid = cursor.fetchone()
 
     tournament_par = 288  # default
+    rounds_played = 4
+    par_per_round = 72
     if year_tid:
         par_info = db.get_tournament_par(year_tid[1], year_tid[0])
         if par_info:
             tournament_par = par_info['total_par']
             rounds_played = par_info['rounds']
             par_per_round = par_info['par_per_round']
-    else:
-        rounds_played = 4
-        par_per_round = 72
 
     conn.close()
 
@@ -628,7 +627,7 @@ def render_field_view(tournament_name, db, fetcher):
 
     # Display stats
     st.subheader(f"Field Performance at {tournament_name}")
-    st.caption(f"Showing {len(player_stats)} players | {years_display} | Course Par: {tournament_par} ({rounds_played} rounds × {par_per_round})")
+    st.caption(f"📊 Showing {len(player_stats)} players | {years_display} | Course Par: {tournament_par} ({rounds_played} rounds × {par_per_round}) | Source: ESPN Tournament Results, OWGR Rankings")
 
     # Value metric explanation
     with st.expander("ℹ️ About the Value Score", expanded=False):
@@ -919,6 +918,11 @@ def render_player_quick_analysis(player_name, tournament_name, db, field_history
         if player_tournament_history.empty:
             st.info(f"{player_name} has no history at this tournament")
         else:
+            # Data source caption
+            hist_years = sorted(player_tournament_history['year'].unique())
+            hist_year_range = f"{hist_years[0]}-{hist_years[-1]}" if len(hist_years) > 1 else str(hist_years[0])
+            st.caption(f"📊 Data: {len(hist_years)} appearance{'s' if len(hist_years) != 1 else ''} at {tournament_name} ({hist_year_range}) | Source: ESPN Tournament Results | Course Par: {tournament_par}")
+
             # Summary stats
             col1, col2, col3, col4 = st.columns(4)
 
@@ -994,7 +998,7 @@ def render_player_quick_analysis(player_name, tournament_name, db, field_history
 
     with tab2:
         # Player's recent form across ALL tournaments (Recent Form equivalent)
-        st.markdown("**Recent Form Across All Tournaments (Last 3 Years)**")
+        st.markdown("**Recent Form Across All Tournaments**")
 
         # Get all recent tournament results for this player (last 3 years)
         conn = sqlite3.connect(db.db_path)
@@ -1038,6 +1042,8 @@ def render_player_quick_analysis(player_name, tournament_name, db, field_history
                 AND tr.position <> 'None'
             """, conn, params=(player_name, min_year))
             conn.close()
+
+            st.caption(f"📊 Data: All PGA Tour events from {min_year}-{max_year} (last 3 seasons) | Source: ESPN Tournament Results")
 
             if recent_form_df.empty:
                 st.info(f"No recent tournament data found for {player_name} (years {min_year}-{max_year})")
