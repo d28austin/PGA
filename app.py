@@ -92,6 +92,80 @@ def main():
         except Exception:
             pass
 
+        # Update ESPN Data expander
+        with st.expander("Update ESPN Data"):
+            if st.button("Update Tournament Results", use_container_width=True):
+                fetcher = st.session_state.fetcher
+                db = st.session_state.db
+
+                status_text = st.empty()
+                progress_bar = st.progress(0)
+
+                status_text.text("Fetching 2026 calendar...")
+                calendar = fetcher.get_season_calendar(2026)
+
+                if not calendar:
+                    status_text.text("Failed to fetch calendar.")
+                else:
+                    # Filter to completed tournaments
+                    now = _dt.now()
+                    completed = []
+                    for event in calendar:
+                        end_date_str = event.get('end_date')
+                        if end_date_str:
+                            try:
+                                end_date = _dt.fromisoformat(end_date_str.replace('Z', '+00:00')).replace(tzinfo=None)
+                                if end_date < now:
+                                    completed.append(event)
+                            except (ValueError, TypeError):
+                                pass
+
+                    # Find which tournaments already have results in the DB
+                    import sqlite3 as _sq
+                    _conn2 = _sq.connect(db.db_path)
+                    existing_ids = set(
+                        r[0] for r in _conn2.execute(
+                            "SELECT DISTINCT tournament_id FROM tournament_results WHERE year = 2026"
+                        ).fetchall()
+                    )
+                    _conn2.close()
+
+                    missing = [e for e in completed if e['event_id'] not in existing_ids]
+
+                    if not missing:
+                        status_text.text("All completed tournaments are up to date.")
+                        progress_bar.progress(1.0)
+                    else:
+                        import time
+                        total_players = 0
+                        updated_count = 0
+
+                        for idx, event in enumerate(missing):
+                            event_id = event['event_id']
+                            name = event.get('name', event_id)
+                            status_text.text(f"Fetching {name}... ({idx + 1}/{len(missing)})")
+                            progress_bar.progress((idx) / len(missing))
+
+                            results_df = fetcher.get_tournament_results(event_id, 2026)
+                            if not results_df.empty:
+                                db.save_tournament_results(results_df)
+                                total_players += len(results_df)
+                                updated_count += 1
+
+                            par_data = fetcher.get_tournament_par(event_id)
+                            if par_data:
+                                db.save_tournament_par(event_id, 2026, par_data)
+
+                            if idx < len(missing) - 1:
+                                time.sleep(2)
+
+                        progress_bar.progress(1.0)
+                        status_text.text(
+                            f"Done! Updated {updated_count} tournaments, {total_players} player results."
+                        )
+                        time.sleep(2)
+                        st.rerun()
+
         st.divider()
 
         # Tournament selectors - two options: alphabetical or by date
