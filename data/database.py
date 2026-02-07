@@ -88,6 +88,15 @@ class PGADatabase:
             )
         """)
 
+        # OWGR rankings table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS owgr_rankings (
+                player_name TEXT PRIMARY KEY,
+                ranking INTEGER,
+                last_updated TIMESTAMP
+            )
+        """)
+
         # Player aliases table (for OWGR name matching)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS player_aliases (
@@ -244,6 +253,12 @@ class PGADatabase:
 
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
+
+        # Bail out early if owgr_rankings table doesn't exist yet
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='owgr_rankings'")
+        if not cursor.fetchone():
+            conn.close()
+            return None
 
         # Check aliases first (e.g., Kevin Yu -> Chun-an Yu)
         try:
