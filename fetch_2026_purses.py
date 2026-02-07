@@ -62,8 +62,19 @@ def fetch_all_purses():
     except:
         print("Purse column already exists")
 
-    # Get all tournaments
-    cursor.execute("SELECT tournament_name, tournament_id FROM tournament_2026_ids ORDER BY date")
+    # Add purse_override column if it doesn't exist
+    try:
+        cursor.execute("ALTER TABLE tournament_2026_ids ADD COLUMN purse_override INTEGER")
+        conn.commit()
+    except:
+        pass  # Column already exists
+
+    # Get all tournaments (skip those with a manual purse override)
+    cursor.execute("""
+        SELECT tournament_name, tournament_id FROM tournament_2026_ids
+        WHERE purse_override IS NULL
+        ORDER BY date
+    """)
     tournaments = cursor.fetchall()
 
     print(f"Fetching purse data for {len(tournaments)} tournaments...")

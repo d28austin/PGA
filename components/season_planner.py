@@ -22,7 +22,7 @@ def _load_upcoming_tournaments(db, min_purse=0):
     conn = sqlite3.connect(db.db_path)
     try:
         df = pd.read_sql("""
-            SELECT s.tournament_name, s.date, s.purse
+            SELECT s.tournament_name, s.date, COALESCE(s.purse_override, s.purse) as purse
             FROM tournament_2026_ids s
             WHERE NOT EXISTS (
                 SELECT 1 FROM tournament_results r

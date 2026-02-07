@@ -167,10 +167,10 @@ def render_field_view(tournament_name, db, fetcher):
     purse_year = "2026"
 
     cursor.execute("""
-        SELECT purse
+        SELECT COALESCE(purse_override, purse)
         FROM tournament_2026_ids
         WHERE tournament_name = ?
-        AND purse > 0
+        AND COALESCE(purse_override, purse) > 0
     """, (tournament_name,))
     result = cursor.fetchone()
 
@@ -198,10 +198,10 @@ def render_field_view(tournament_name, db, fetcher):
     all_purses_df = pd.read_sql("""
         SELECT
             tournament_name,
-            purse as total_purse
+            COALESCE(purse_override, purse) as total_purse
         FROM tournament_2026_ids
-        WHERE purse > 0
-        ORDER BY purse DESC
+        WHERE COALESCE(purse_override, purse) > 0
+        ORDER BY COALESCE(purse_override, purse) DESC
     """, conn)
 
     conn.close()

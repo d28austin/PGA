@@ -15,7 +15,6 @@ def update_purses():
         'AT&T Pebble Beach Pro-Am': 20000000,
         'The Genesis Invitational': 20000000,
         'Cognizant Classic': 9600000,
-        'Arnold Palmer Invitational pres. by Mastercard': 20000000,
         'Arnold Palmer Invitational': 20000000,
         'Puerto Rico Open': 4000000,
         'THE PLAYERS Championship': 25000000,
@@ -28,7 +27,7 @@ def update_purses():
         'ONEflight Myrtle Beach Classic': 4000000,
         'THE CJ CUP Byron Nelson': 10300000,
         'Charles Schwab Challenge': 9900000,
-        'the Memorial Tournament pres. by Workday': 20000000,
+        'the Memorial Tournament': 20000000,
         'RBC Canadian Open': 9800000,
         'Travelers Championship': 20000000,
         'John Deere Classic': 8800000,
@@ -40,7 +39,7 @@ def update_purses():
         'Wyndham Championship': 8500000,
         'FedEx St. Jude Championship': 20000000,
         'BMW Championship': 20000000,
-        'TOUR Championship': 40000000,
+        'TOUR Championship': 28000000,
         'Bank of Utah Championship': 6000000,
         'Baycurrent Classic': 8000000,
         'Butterfield Bermuda Championship': 6000000,
@@ -65,8 +64,18 @@ def update_purses():
     except:
         pass
 
-    # Get all tournaments
-    cursor.execute("SELECT tournament_name, tournament_id FROM tournament_2026_ids")
+    # Add purse_override column if it doesn't exist
+    try:
+        cursor.execute("ALTER TABLE tournament_2026_ids ADD COLUMN purse_override INTEGER")
+        conn.commit()
+    except:
+        pass  # Column already exists
+
+    # Get all tournaments (skip those with a manual purse override)
+    cursor.execute("""
+        SELECT tournament_name, tournament_id FROM tournament_2026_ids
+        WHERE purse_override IS NULL
+    """)
     tournaments = cursor.fetchall()
 
     print(f"Updating purse data for {len(tournaments)} tournaments...")

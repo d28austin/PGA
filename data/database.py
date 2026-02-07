@@ -84,9 +84,16 @@ class PGADatabase:
                 tournament_id TEXT NOT NULL,
                 date TEXT,
                 status TEXT,
-                purse INTEGER DEFAULT 0
+                purse INTEGER DEFAULT 0,
+                purse_override INTEGER
             )
         """)
+
+        # Add purse_override column if it doesn't exist (migration)
+        try:
+            cursor.execute("ALTER TABLE tournament_2026_ids ADD COLUMN purse_override INTEGER")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
 
         # Used players table (for one-and-done tracking)
         cursor.execute("""

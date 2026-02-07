@@ -45,8 +45,10 @@ TOURNAMENT_NAME_MAPPINGS = {
     'Wells Fargo Championship': 'Wells Fargo Championship',
 
     # Byron Nelson
-    'AT&T Byron Nelson': 'CJ CUP Byron Nelson',
-    'CJ CUP Byron Nelson': 'CJ CUP Byron Nelson',
+    'HP Byron Nelson Championship': 'THE CJ CUP Byron Nelson',
+    'AT&T Byron Nelson': 'THE CJ CUP Byron Nelson',
+    'CJ CUP Byron Nelson': 'THE CJ CUP Byron Nelson',
+    'THE CJ CUP Byron Nelson': 'THE CJ CUP Byron Nelson',
 
     # Charles Schwab Challenge
     'Charles Schwab Challenge': 'Charles Schwab Challenge',
@@ -60,9 +62,11 @@ TOURNAMENT_NAME_MAPPINGS = {
     'Valspar Championship': 'Valspar Championship',
 
     # Houston Open
-    'Houston Open': 'Houston Open',
-    'Shell Houston Open': 'Houston Open',
-    'Texas Children Houston Open': 'Houston Open',
+    'Houston Open': "Texas Children's Houston Open",
+    'Shell Houston Open': "Texas Children's Houston Open",
+    'Texas Children Houston Open': "Texas Children's Houston Open",
+    'Cadence Bank Houston Open': "Texas Children's Houston Open",
+    "Texas Children's Houston Open": "Texas Children's Houston Open",
 
     # Valero Texas Open
     'Valero Texas Open': 'Valero Texas Open',
@@ -75,11 +79,14 @@ TOURNAMENT_NAME_MAPPINGS = {
     'FedEx St. Jude Invitational': 'FedEx St. Jude Championship',
     'WGC-FedEx St. Jude Invitational': 'FedEx St. Jude Championship',
     'St. Jude Classic': 'FedEx St. Jude Championship',
+    'FedEx St. Jude Classic': 'FedEx St. Jude Championship',
 
     'BMW Championship': 'BMW Championship',
 
     'TOUR Championship': 'TOUR Championship',
     'The Tour Championship': 'TOUR Championship',
+    'TOUR Championship by Coca-Cola': 'TOUR Championship',
+    'Tour Championship': 'TOUR Championship',
 
     # The Barclays / Northern Trust / Liberty National
     'The Barclays': 'The Northern Trust',
@@ -92,8 +99,9 @@ TOURNAMENT_NAME_MAPPINGS = {
     # 3M Open
     '3M Open': '3M Open',
 
-    # Rocket Mortgage Classic
-    'Rocket Mortgage Classic': 'Rocket Mortgage Classic',
+    # Rocket Classic
+    'Rocket Mortgage Classic': 'Rocket Classic',
+    'Rocket Classic': 'Rocket Classic',
 
     # Travelers Championship
     'Travelers Championship': 'Travelers Championship',
@@ -101,6 +109,7 @@ TOURNAMENT_NAME_MAPPINGS = {
     # U.S. Open
     'U.S. Open': 'U.S. Open',
     'US Open': 'U.S. Open',
+    'U.S. Open Golf Championship': 'U.S. Open',
 
     # The Open Championship
     'The Open Championship': 'The Open',
@@ -113,6 +122,9 @@ TOURNAMENT_NAME_MAPPINGS = {
     # Masters
     'Masters Tournament': 'Masters Tournament',
     'The Masters': 'Masters Tournament',
+    '2017 Masters Tournament': 'Masters Tournament',
+    '2018 Masters Tournament': 'Masters Tournament',
+    '2019 Masters Tournament': 'Masters Tournament',
 
     # Sanderson Farms / Country Club of Jackson
     'Sanderson Farms Championship': 'Sanderson Farms Championship',
@@ -214,14 +226,16 @@ def normalize_tournament_names():
     total_updates = 0
 
     for old_name, new_name in TOURNAMENT_NAME_MAPPINGS.items():
-        # Check if old name exists
+        if old_name == new_name:
+            continue
+
+        # Update tournament_results
         cursor.execute("""
             SELECT COUNT(*) FROM tournament_results WHERE tournament_name = ?
         """, (old_name,))
         count = cursor.fetchone()[0]
 
         if count > 0:
-            # Update to new name
             cursor.execute("""
                 UPDATE tournament_results
                 SET tournament_name = ?
@@ -231,11 +245,36 @@ def normalize_tournament_names():
             total_updates += count
             print(f"Updated {count:4d} records: '{old_name}' -> '{new_name}'")
 
+    # Also normalize tournament_2026_ids so 2026 names match historical canonical names
+    print()
+    print("Normalizing 2026 schedule names...")
+    schedule_updates = 0
+
+    for old_name, new_name in TOURNAMENT_NAME_MAPPINGS.items():
+        if old_name == new_name:
+            continue
+
+        cursor.execute("""
+            SELECT COUNT(*) FROM tournament_2026_ids WHERE tournament_name = ?
+        """, (old_name,))
+        count = cursor.fetchone()[0]
+
+        if count > 0:
+            cursor.execute("""
+                UPDATE tournament_2026_ids
+                SET tournament_name = ?
+                WHERE tournament_name = ?
+            """, (new_name, old_name))
+
+            schedule_updates += count
+            print(f"Updated 2026 schedule: '{old_name}' -> '{new_name}'")
+
     conn.commit()
     conn.close()
 
     print("=" * 80)
-    print(f"Total records updated: {total_updates}")
+    print(f"Total tournament_results updated: {total_updates}")
+    print(f"Total tournament_2026_ids updated: {schedule_updates}")
     print("Tournament name normalization complete!")
 
 

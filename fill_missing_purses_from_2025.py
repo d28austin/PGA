@@ -11,11 +11,19 @@ def fill_missing_purses():
     conn = sqlite3.connect('data/cache/pga_data.db')
     cursor = conn.cursor()
 
-    # Get tournaments with missing purse data
+    # Add purse_override column if it doesn't exist
+    try:
+        cursor.execute("ALTER TABLE tournament_2026_ids ADD COLUMN purse_override INTEGER")
+        conn.commit()
+    except:
+        pass  # Column already exists
+
+    # Get tournaments with missing purse data (skip those with a manual override)
     cursor.execute("""
         SELECT tournament_name, tournament_id
         FROM tournament_2026_ids
-        WHERE purse = 0 OR purse IS NULL
+        WHERE (purse = 0 OR purse IS NULL)
+        AND purse_override IS NULL
         ORDER BY date
     """)
     missing_purse_tournaments = cursor.fetchall()

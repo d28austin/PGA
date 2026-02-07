@@ -24,7 +24,7 @@ def render_schedule_view(db):
                 tournament_id,
                 date,
                 status,
-                purse
+                COALESCE(purse_override, purse) as purse
             FROM tournament_2026_ids
             ORDER BY date
         """, conn)
