@@ -311,17 +311,23 @@ def render_season_planner(db):
     if median_purse <= 0:
         median_purse = 1
 
-    # ── Greedy optimal assignment: best players → richest tournaments ──
-    # Build all (player, tournament) pairs scored by value × purse
+    # ── Greedy optimal assignment: best OWGR → richest tournaments ─────
+    # Use OWGR ranking (not value score) for the assignment so that
+    # planning reflects stable ranking, not volatile recent form.
+    # Value scores still appear in the cards for week-to-week evaluation.
+    # OWGR score: rank 1 → 100, rank 300 → 0  (higher = better)
     pairs = []
     for _, r in matrix_df.iterrows():
+        owgr = r["OWGR"]
+        owgr_score = max(0.0, (300.0 - owgr) / 299.0 * 100.0)
         for t in tournament_names:
             pairs.append({
                 "player": r["Player"],
+                "owgr": int(owgr),
                 "tournament": t,
                 "value": r[t],
                 "purse": purse_by_tourn[t],
-                "weighted": r[t] * purse_by_tourn[t],
+                "weighted": owgr_score * purse_by_tourn[t],
             })
 
     pairs.sort(key=lambda x: x["weighted"], reverse=True)
