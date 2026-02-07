@@ -303,12 +303,12 @@ def render_player_view(tournament_name, db, fetcher):
     # Quick action button
     st.divider()
     if selected_player not in used_players:
-        if st.button(f"✅ Mark {selected_player} as Used", use_container_width=True, type="primary"):
+        if st.button(f"✅ Mark {selected_player} as Used", key=f"pv_mark_used_{selected_player}", use_container_width=True, type="primary"):
             db.mark_player_used(selected_player, tournament_name, f"Week {datetime.now().isocalendar()[1]}")
             st.success(f"Marked {selected_player} as used!")
             st.rerun()
     else:
-        if st.button(f"↩️ Remove {selected_player} from Used List", use_container_width=True):
+        if st.button(f"↩️ Remove {selected_player} from Used List", key=f"pv_remove_used_{selected_player}", use_container_width=True):
             db.remove_used_player(selected_player)
             st.success(f"Removed {selected_player} from used list!")
             st.rerun()
