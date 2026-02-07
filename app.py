@@ -508,7 +508,7 @@ def main():
             st.rerun()
 
     # Main content area with tabs
-    tab0, tab1, tab2, tab3, tab4, tab_schedule, tab_players, tab_stats, tab_picks = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab_schedule, tab_players, tab_stats, tab_picks, tab_standings = st.tabs([
         "🏌️ In the Field",
         "📊 Tournament History",
         "👤 Player Deep Dive",
@@ -517,7 +517,8 @@ def main():
         "📅 2026 Schedule",
         "👥 All Players",
         "🎯 ESPN Stats",
-        "📋 My Picks"
+        "📋 My Picks",
+        "🏆 Standings"
     ])
 
     with tab0:
@@ -587,6 +588,10 @@ def main():
     with tab_picks:
         from components.my_picks import render_my_picks
         render_my_picks(st.session_state.db)
+
+    with tab_standings:
+        from components.standings import render_standings
+        render_standings(st.session_state.db)
 
     # Show used players modal if requested
     if hasattr(st.session_state, 'show_used_players') and st.session_state.show_used_players:
