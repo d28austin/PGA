@@ -65,6 +65,7 @@ class PGADatabase:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 player_id TEXT,
                 player_name TEXT,
+                tournament_name TEXT,
                 tournament_id TEXT,
                 year INTEGER,
                 position TEXT,
@@ -73,6 +74,17 @@ class PGADatabase:
                 rounds_played INTEGER,
                 last_updated TIMESTAMP,
                 UNIQUE(player_id, tournament_id, year)
+            )
+        """)
+
+        # 2026 schedule table (populated from ESPN scoreboard API)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS tournament_2026_ids (
+                tournament_name TEXT PRIMARY KEY,
+                tournament_id TEXT NOT NULL,
+                date TEXT,
+                status TEXT,
+                purse INTEGER DEFAULT 0
             )
         """)
 
