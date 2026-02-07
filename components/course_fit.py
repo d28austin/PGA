@@ -34,7 +34,6 @@ COURSE_PROFILES = {
     "RBC Heritage":                  {"dist": 2, "acc": 5, "gir": 4, "putt": 4, "scr": 5},
     "Travelers Championship":        {"dist": 4, "acc": 3, "gir": 4, "putt": 5, "scr": 3},
     "Truist Championship":           {"dist": 4, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
-    "The Sentry":                    {"dist": 5, "acc": 2, "gir": 4, "putt": 4, "scr": 3},
 
     # Standard events
     "Farmers Insurance Open":        {"dist": 5, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
@@ -79,7 +78,6 @@ COURSE_DESCRIPTIONS = {
     "RBC Heritage":                  "Harbour Town GL (~7,100 yds). Tight tree-lined Pete Dye design with small, sneaky-difficult greens and strategic bunkers. Accuracy is paramount.",
     "Travelers Championship":        "TPC River Highlands (~6,800 yds). Short course with a drivable par-4 15th and reachable par 5s rewarding distance. A birdie-fest where converting putts is critical.",
     "Truist Championship":           "Venue TBD. Generic profile pending venue confirmation.",
-    "The Sentry":                    "Kapalua Plantation (~7,600 yds). Massive fairways, huge elevation changes, very windy. The ultimate bomber's course where long hitters dominate every year.",
 
     # Standard events
     "Farmers Insurance Open":        "Torrey Pines South (~7,700 yds). One of the longest courses on Tour with Kikuyu rough. Distance is the biggest differentiator; greens are large enough that scrambling is less critical.",
