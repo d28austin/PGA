@@ -379,11 +379,11 @@ def render_course_fit(db):
             "Player": player_name,
             "OWGR": owgr,
             "Course Fit": round(fit_scores[player_name], 1),
-            "Dist %ile": round(percentiles_df.loc[player_name, "dist"], 0),
-            "Acc %ile": round(percentiles_df.loc[player_name, "acc"], 0),
-            "GIR %ile": round(percentiles_df.loc[player_name, "gir"], 0),
-            "Putt %ile": round(percentiles_df.loc[player_name, "putt"], 0),
-            "Scr %ile": round(percentiles_df.loc[player_name, "scr"], 0),
+            "Dist Pctl": round(percentiles_df.loc[player_name, "dist"], 0),
+            "Acc Pctl": round(percentiles_df.loc[player_name, "acc"], 0),
+            "GIR Pctl": round(percentiles_df.loc[player_name, "gir"], 0),
+            "Putt Pctl": round(percentiles_df.loc[player_name, "putt"], 0),
+            "Scr Pctl": round(percentiles_df.loc[player_name, "scr"], 0),
             "Status": "Used" if is_used else "Available",
         })
 
@@ -405,20 +405,20 @@ def render_course_fit(db):
             "Course Fit": st.column_config.ProgressColumn(
                 "Course Fit", min_value=0, max_value=100, format="%.1f",
             ),
-            "Dist %ile": st.column_config.ProgressColumn(
-                "Dist %ile", min_value=0, max_value=100, format="%.0f",
+            "Dist Pctl": st.column_config.ProgressColumn(
+                "Dist Pctl", min_value=0, max_value=100, format="%.0f",
             ),
-            "Acc %ile": st.column_config.ProgressColumn(
-                "Acc %ile", min_value=0, max_value=100, format="%.0f",
+            "Acc Pctl": st.column_config.ProgressColumn(
+                "Acc Pctl", min_value=0, max_value=100, format="%.0f",
             ),
-            "GIR %ile": st.column_config.ProgressColumn(
-                "GIR %ile", min_value=0, max_value=100, format="%.0f",
+            "GIR Pctl": st.column_config.ProgressColumn(
+                "GIR Pctl", min_value=0, max_value=100, format="%.0f",
             ),
-            "Putt %ile": st.column_config.ProgressColumn(
-                "Putt %ile", min_value=0, max_value=100, format="%.0f",
+            "Putt Pctl": st.column_config.ProgressColumn(
+                "Putt Pctl", min_value=0, max_value=100, format="%.0f",
             ),
-            "Scr %ile": st.column_config.ProgressColumn(
-                "Scr %ile", min_value=0, max_value=100, format="%.0f",
+            "Scr Pctl": st.column_config.ProgressColumn(
+                "Scr Pctl", min_value=0, max_value=100, format="%.0f",
             ),
             "Status": st.column_config.TextColumn("Status", width="small"),
         },
