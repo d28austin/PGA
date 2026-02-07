@@ -154,30 +154,23 @@ def _load_upcoming_profiled_tournaments(db):
 
 
 def _load_player_stats(db):
-    """Load the 5 key stats for all players from the latest year available."""
+    """Load the 5 key stats averaged across 2024-2026 for a stable pool."""
     stat_names = [s[0] for s in STAT_CATEGORIES]
     placeholders = ",".join(["?"] * len(stat_names))
+    years = [2024, 2025, 2026]
+    year_placeholders = ",".join(["?"] * len(years))
 
     conn = sqlite3.connect(db.db_path)
     try:
-        # Find the latest year with data
-        cur = conn.cursor()
-        cur.execute(f"""
-            SELECT MAX(year) FROM player_season_stats
-            WHERE stat_name IN ({placeholders}) AND stat_value IS NOT NULL
-        """, stat_names)
-        row = cur.fetchone()
-        if not row or row[0] is None:
-            return pd.DataFrame()
-        latest_year = row[0]
-
         df = pd.read_sql(f"""
-            SELECT player_name, stat_name, stat_value
+            SELECT player_name, stat_name, AVG(stat_value) as stat_value
             FROM player_season_stats
             WHERE stat_name IN ({placeholders})
               AND stat_value IS NOT NULL
-              AND year = ?
-        """, conn, params=stat_names + [latest_year])
+              AND stat_value != 0
+              AND year IN ({year_placeholders})
+            GROUP BY player_name, stat_name
+        """, conn, params=stat_names + years)
     finally:
         conn.close()
 
