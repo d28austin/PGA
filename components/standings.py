@@ -137,7 +137,7 @@ def render_standings(db):
                 earn_str = f"${earnings:,.0f}" if earnings > 0 else "$0"
                 cell = f"{player}{pos_str} — {earn_str}"
                 if earnings > 0 and earnings == best_earnings:
-                    cell = f"**{cell}**"
+                    cell += " ★"
             else:
                 cell = "No pick"
 
@@ -146,11 +146,11 @@ def render_standings(db):
         table_rows.append(row)
 
     # Add totals row
-    totals_row = {"Tournament": "**Total**", "Date": ""}
+    totals_row = {"Tournament": "Total", "Date": ""}
     for user in USERS:
         total = standings_df[f"{user}_earnings"].sum()
-        totals_row[user] = f"**${total:,.0f}**"
+        totals_row[user] = f"${total:,.0f}"
     table_rows.append(totals_row)
 
     display_df = pd.DataFrame(table_rows)
-    st.markdown(display_df.to_markdown(index=False), unsafe_allow_html=True)
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
