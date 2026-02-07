@@ -302,7 +302,7 @@ def render_season_planner(db):
 
     matrix_df = pd.DataFrame(matrix_data)
 
-    # ── Purse weighting for strategic recommendations ──────────────────
+    # ── Purse data ──────────────────────────────────────────────────────
     purse_by_tourn = dict(zip(
         display_tournaments["tournament_name"],
         display_tournaments["purse"],
@@ -311,21 +311,42 @@ def render_season_planner(db):
     if median_purse <= 0:
         median_purse = 1
 
-    best_tourn_per_player = {}
+    # ── Greedy optimal assignment: best players → richest tournaments ──
+    # Build all (player, tournament) pairs scored by value × purse
+    pairs = []
     for _, r in matrix_df.iterrows():
-        weighted = {
-            t: r[t] * (purse_by_tourn.get(t, median_purse) / median_purse)
-            for t in tournament_names
-        }
-        best_tourn_per_player[r["Player"]] = max(weighted, key=weighted.get)
+        for t in tournament_names:
+            pairs.append({
+                "player": r["Player"],
+                "tournament": t,
+                "value": r[t],
+                "purse": purse_by_tourn[t],
+                "weighted": r[t] * purse_by_tourn[t],
+            })
+
+    pairs.sort(key=lambda x: x["weighted"], reverse=True)
+
+    assigned_players = set()
+    assigned_tournaments = set()
+    assignments = {}  # tournament -> player
+    for p in pairs:
+        if p["player"] in assigned_players or p["tournament"] in assigned_tournaments:
+            continue
+        assignments[p["tournament"]] = p["player"]
+        assigned_players.add(p["player"])
+        assigned_tournaments.add(p["tournament"])
+        if len(assigned_tournaments) >= len(tournament_names):
+            break
 
     # ==================================================================
-    # SECTION 1: Tournament Cards
+    # SECTION 1: Tournament Cards with assigned picks
     # ==================================================================
-    st.subheader("Tournament-by-Tournament Picks")
-    st.caption("Top 5 recommended picks for each upcoming tournament, ranked by fit")
+    st.subheader("Optimal Pick Assignment")
+    st.caption(
+        "Each player is assigned to ONE tournament where they create the most value "
+        "(player skill × tournament purse). Best players go to the richest events."
+    )
 
-    # Show cards in rows of 2
     for i in range(0, len(tournament_names), 2):
         cols = st.columns(2)
         for j, col in enumerate(cols):
@@ -336,72 +357,82 @@ def render_season_planner(db):
             t_row = display_tournaments.iloc[idx]
             purse = purse_by_tourn[t_name]
             tier = _purse_tier(purse, median_purse)
+            assigned = assignments.get(t_name)
 
             with col:
-                # Card header
                 st.markdown(f"**{t_name}**")
                 st.caption(f"{t_row['date_display']} | {t_row['purse_display']} | {tier}")
 
-                # Build recommendations for this tournament
-                recs = []
+                # Build card: assigned pick on top, then alternates
+                card_rows = []
+
+                if assigned:
+                    a_row = matrix_df[matrix_df["Player"] == assigned].iloc[0]
+                    ch = course_hist.get((assigned, t_name), _EMPTY_COURSE)
+                    card_rows.append({
+                        "": ">>> PICK",
+                        "Player": assigned,
+                        "OWGR": int(a_row["OWGR"]),
+                        "Value": a_row[t_name],
+                        "Course Hx": _course_history_summary(ch),
+                    })
+
+                # Alternates: top players by value for this tournament,
+                # excluding anyone already assigned to a different tournament
                 for _, r in matrix_df.nlargest(20, t_name).iterrows():
-                    best_t = best_tourn_per_player[r["Player"]]
+                    if r["Player"] == assigned:
+                        continue
+                    if r["Player"] in assigned_players and assignments.get(t_name) != r["Player"]:
+                        assigned_to = [t for t, p in assignments.items() if p == r["Player"]]
+                        alt_label = f"(@ {assigned_to[0][:15]})" if assigned_to else ""
+                    else:
+                        alt_label = ""
                     ch = course_hist.get((r["Player"], t_name), _EMPTY_COURSE)
-                    recs.append({
+                    card_rows.append({
+                        "": alt_label,
                         "Player": r["Player"],
                         "OWGR": int(r["OWGR"]),
                         "Value": r[t_name],
                         "Course Hx": _course_history_summary(ch),
-                        "Best Week": "Here" if best_t == t_name else best_t[:20],
                     })
+                    if len(card_rows) >= 5:
+                        break
 
-                rec_df = pd.DataFrame(recs)
-                # Prioritize: best-week-is-here first, then highest value
-                rec_df["_sort"] = rec_df.apply(
-                    lambda x: (0 if x["Best Week"] == "Here" else 1, -x["Value"]),
-                    axis=1,
+                st.dataframe(
+                    pd.DataFrame(card_rows),
+                    hide_index=True, use_container_width=True,
                 )
-                rec_df = rec_df.sort_values("_sort").head(5).drop(columns=["_sort"])
-                st.dataframe(rec_df, hide_index=True, use_container_width=True)
 
         if i + 2 < len(tournament_names):
             st.divider()
 
     # ==================================================================
-    # SECTION 2: Player Timeline Chart
+    # SECTION 2: Player Deployment Timeline
     # ==================================================================
     st.divider()
     st.subheader("Player Deployment Timeline")
     st.caption(
-        "Each bar shows a player's value score at that tournament. "
-        "Bar color reflects tournament purse tier. "
-        "Use your best players at the tallest bars in the richest (darkest) tournaments."
+        "Value score at each tournament. "
+        "Taller bars = better fit. Bar color = purse tier. "
+        "Star marks the assigned tournament for each player."
     )
 
-    # Let user pick which players to show on the timeline
+    # Build a lookup for which tournament each player is assigned to
+    player_assignment = {p: t for t, p in assignments.items()}
+
     top_10_names = top_players.head(10)["player_name"].tolist()
     timeline_players = st.multiselect(
         "Players to chart:",
         options=player_names,
-        default=top_10_names[:6],
+        default=top_10_names[:5],
         key="sp_timeline_players",
     )
 
     if timeline_players:
-        # Short tournament labels for x-axis
         short_labels = []
         for _, t_row in display_tournaments.iterrows():
-            name = t_row["tournament_name"]
-            # Take first word + abbreviate
-            short = name[:18]
-            short_labels.append(f"{short}\n{t_row['date_display']}")
-
-        # Color scale by purse tier
-        tier_colors = {"Elite": "#1a7431", "Premium": "#2e86de", "Standard": "#7f8c8d"}
-        bar_colors = [
-            tier_colors[_purse_tier(purse_by_tourn[t], median_purse)]
-            for t in tournament_names
-        ]
+            short = t_row["tournament_name"][:18]
+            short_labels.append(f"{short}\n{t_row['date_display']}\n{t_row['purse_display']}")
 
         fig = go.Figure()
         for player in timeline_players:
@@ -410,50 +441,38 @@ def render_season_planner(db):
                 continue
             p_row = p_row.iloc[0]
             values = [p_row[t] for t in tournament_names]
-            best_t = best_tourn_per_player.get(player, "")
+            assigned_t = player_assignment.get(player, "")
 
-            # Mark the best week with a star in hover text
             hover = []
             for k, t in enumerate(tournament_names):
-                star = " ★ BEST WEEK" if t == best_t else ""
+                star = " ★ ASSIGNED" if t == assigned_t else ""
                 ch = course_hist.get((player, t), _EMPTY_COURSE)
                 hover.append(
-                    f"{t}<br>Value: {values[k]:.1f}{star}"
-                    f"<br>Purse: {display_tournaments.iloc[k]['purse_display']}"
-                    f"<br>History: {_course_history_summary(ch)}"
+                    f"<b>{player}</b><br>{t}<br>"
+                    f"Value: {values[k]:.1f}{star}<br>"
+                    f"Purse: {display_tournaments.iloc[k]['purse_display']}<br>"
+                    f"History: {_course_history_summary(ch)}"
                 )
 
             fig.add_trace(go.Bar(
-                name=f"{player} (OWGR {int(p_row['OWGR'])})",
+                name=f"{player} (#{int(p_row['OWGR'])})",
                 x=short_labels,
                 y=values,
                 hovertext=hover,
                 hoverinfo="text",
-                marker_color=bar_colors,
-                opacity=0.85,
             ))
 
         fig.update_layout(
             barmode="group",
-            height=450,
+            height=500,
             yaxis_title="Value Score",
             xaxis_title="",
             legend=dict(
                 orientation="h", yanchor="bottom", y=1.02,
                 xanchor="center", x=0.5,
             ),
-            margin=dict(b=80),
+            margin=dict(b=100),
         )
-
-        # Add purse-tier legend as annotation
-        fig.add_annotation(
-            text="Bar color: <b style='color:#1a7431'>Elite purse</b> | "
-                 "<b style='color:#2e86de'>Premium</b> | "
-                 "<b style='color:#7f8c8d'>Standard</b>",
-            xref="paper", yref="paper", x=0.5, y=-0.18,
-            showarrow=False, font=dict(size=11),
-        )
-
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Select players above to see the timeline chart.")
