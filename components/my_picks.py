@@ -15,13 +15,8 @@ def render_my_picks(db):
     user = db.current_user or "Unknown"
     st.caption(f"Picks for **{user}**")
 
-    # Reset selectbox state when user changes so stale values don't
-    # trigger spurious writes to the new user's picks file.
-    if st.session_state.get("picks_user") != user:
-        for key in list(st.session_state.keys()):
-            if key.startswith("pick_"):
-                del st.session_state[key]
-        st.session_state.picks_user = user
+    # Track current user so callbacks target the right picks file
+    st.session_state.picks_user = user
 
     # ── Load 2026 schedule ────────────────────────────────────────────
     conn = sqlite3.connect(db.db_path)
@@ -89,7 +84,7 @@ def render_my_picks(db):
 
     # ── Callback (closure over db) ────────────────────────────────────
     def _on_change(tournament_name, week, old_player):
-        key = f"pick_{tournament_name}"
+        key = f"pick_{user}_{tournament_name}"
         raw = st.session_state.get(key, "\u2014")
         moved = raw.endswith(" (Used)")
         new_player = None if raw == "\u2014" else raw.replace(" (Used)", "")
@@ -141,7 +136,7 @@ def render_my_picks(db):
             label,
             options=options,
             index=default_idx,
-            key=f"pick_{t_name}",
+            key=f"pick_{user}_{t_name}",
             on_change=_on_change,
             args=(t_name, row['week'], current_pick),
         )
