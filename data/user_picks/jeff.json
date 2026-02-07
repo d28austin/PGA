@@ -1,1 +1,12 @@
-{"user": "jeff", "season": "2026", "picks": []}
+{
+  "user": "jeff",
+  "season": "2026",
+  "picks": [
+    {
+      "player_name": "Jason Day",
+      "tournament_name": "Farmers Insurance Open",
+      "week_used": "5",
+      "date_used": "2026-02-07T05:14:58.320701"
+    }
+  ]
+}
