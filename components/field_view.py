@@ -576,7 +576,7 @@ def render_field_view(tournament_name, db, fetcher):
             'owgr_numeric': row['owgr_numeric']
         })
 
-        result = value_calc.calculate_value(player_data)
+        result = value_calc.calculate_value(player_data, player_name=player_name)
         return round(result['final_value_score'], 1)
 
     player_stats['value_numeric'] = player_stats.apply(calculate_value_score, axis=1)
@@ -632,27 +632,28 @@ def render_field_view(tournament_name, db, fetcher):
     # Value metric explanation
     with st.expander("ℹ️ About the Value Score", expanded=False):
         st.markdown("""
-        **Value Score** is a regression-optimized metric trained on actual tournament results:
+        **Value Score** uses backtest-optimized continuous scoring validated across
+        243 tournaments and 15,559 predictions (2020-2026).
 
-        **Model Performance:**
-        - Trained on WM Phoenix Open (2020-2024, 397 players)
-        - Ridge Regression R²: 0.097 | Random Forest R²: 0.855
-        - Uses 12 features with proper standardization
+        **Key finding:** Recent form accounts for ~85% of what predicts tournament finishes.
 
-        **Calculation (weighted combination):**
-        - **Regression Prediction (45%)**: Integrates all 12 features to predict finish position
-        - **OWGR (30%)**: Current world ranking (most important single factor!)
-        - **Recent Form (20%)**: Last 5-10 tournaments across all events
-        - **Tournament History (5%)**: Bonus for course-specific experience
+        **Weights (empirically optimized via walk-forward backtesting):**
+        - **Recent Avg Finish (35%)**: Average finish position over last 2-3 years
+        - **OWGR (35%)**: Current world ranking (best single predictor of future performance)
+        - **Recent Top-10 Rate (15%)**: Consistency at the top of leaderboards
+        - **Ridge Model (10%)**: 11-feature regression using course history + form (enhanced to 18 features with ESPN stats when available)
+        - **Course History (5%)**: Prior average finish at this specific tournament
 
-        **Realistic Score Ranges:**
-        - 🏆 **12-14**: Elite pick - Top OWGR, great recent form, strong course history
-        - ⭐ **10-12**: Premium pick - Top-50 OWGR or excellent recent form
-        - ✅ **8-10**: Solid pick - Good ranking or consistent recent performance
-        - 📊 **6-8**: Decent pick - Ranked player with some positive indicators
-        - 📉 **4-6**: Mediocre pick - Mid-tier ranking or inconsistent form
-        - ⚠️ **2-4**: Risky pick - Limited data or poor recent form
-        - ❌ **0-2**: Avoid - Poor track record or unranked
+        **Continuous scoring** - no artificial brackets. Each component scales linearly
+        from 0-100, then blends with the optimized weights above.
+
+        **Score Ranges (0-100):**
+        - 🏆 **80+**: Elite - Top OWGR + great recent form + strong course history
+        - ⭐ **60-79**: Premium - Top-50 OWGR or excellent recent form
+        - ✅ **40-59**: Solid - Good ranking or consistent performance
+        - 📊 **25-39**: Decent - Ranked player with some positive indicators
+        - 📉 **10-24**: Risky - Limited data or poor recent form
+        - ❌ **0-9**: Avoid - Unranked or no data
         """)
 
     # Show filter options
@@ -776,31 +777,20 @@ Tournament Tier Warnings:
 • Lower-tier events (33+): ⚠️ for Top 50 OWGR
 
 ⚠️ = Consider saving this elite player for a higher-purse event!"""),
-            "value_numeric": st.column_config.NumberColumn("Value", format="%.1f", help="""REGRESSION-OPTIMIZED VALUE SCORE
+            "value_numeric": st.column_config.NumberColumn("Value", format="%.1f", help="""BACKTEST-OPTIMIZED VALUE SCORE (0-100)
 
-📊 MODEL:
-• Trained on actual tournament results (WM Phoenix Open 2020-2024)
-• Ridge Regression using 12 features with standardization
-• R²: 0.097 (Ridge) / 0.855 (Random Forest)
+Validated across 243 tournaments, 15,559 predictions (2020-2026).
 
-🧮 CALCULATION (Weighted Combination):
-• Regression Prediction (45%): Predicts finish using 12 features
-• OWGR (30%): World ranking - most important single factor
-• Recent Form (20%): L5/L10 tournaments across all events
-• Course History (5%): Bonus for tournament-specific experience
+WEIGHTS (empirically optimized):
+• Recent Avg Finish (35%): 2-3 year form
+• OWGR (35%): Current world ranking
+• Recent Top-10 Rate (15%): Consistency at top
+• Ridge Model (10%): Course history + form regression
+• Course History (5%): Prior avg finish here
 
-📈 12 FEATURES INCLUDE:
-Prior tournament stats, recent form metrics, OWGR, cut rates,
-top 10 rates, best finishes, etc.
-
-🎯 REALISTIC RANGES:
-🏆 30-50: Elite (Top OWGR + great form + course history)
-⭐ 20-29: Premium (Top-50 OWGR or excellent recent form)
-✅ 15-19: Solid (Good ranking or consistent performance)
-📊 10-14: Decent (Ranked player with positives)
-📉 0-9: Risky (Unranked or poor form)
-
-💡 KEY INSIGHT: OWGR + Recent Form matter MORE than course history!"""),
+SCORE RANGES:
+80+: Elite | 60-79: Premium | 40-59: Solid
+25-39: Decent | 10-24: Risky | 0-9: Avoid"""),
             "status": st.column_config.TextColumn("Status", width="small")
         },
         hide_index=True,
