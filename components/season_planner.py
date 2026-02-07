@@ -1,15 +1,15 @@
 """
-Season Planner — map top remaining players against upcoming tournaments.
+Season Planner — review premium tournaments and decide which players
+to deploy at each one.
 
-Tournament cards show the best picks per week. A player timeline chart
-shows when to deploy each of your top players across the season.
+Shows upcoming tournaments with purse >= $15M and the best available
+players for each, with course history, OWGR, and value scores.
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import sqlite3
-import plotly.graph_objects as go
 from components.value_calculator import ValueCalculator
 
 
@@ -17,7 +17,7 @@ from components.value_calculator import ValueCalculator
 # Data helpers
 # ---------------------------------------------------------------------------
 
-def _load_upcoming_tournaments(db):
+def _load_upcoming_tournaments(db, min_purse=0):
     """Return upcoming 2026 tournaments (no finalized results yet)."""
     conn = sqlite3.connect(db.db_path)
     try:
@@ -44,11 +44,15 @@ def _load_upcoming_tournaments(db):
     df["purse_display"] = df["purse"].apply(
         lambda x: f"${x / 1e6:.0f}M" if x >= 1e6 else ""
     )
+
+    if min_purse > 0:
+        df = df[df["purse"] >= min_purse].reset_index(drop=True)
+
     return df
 
 
-def _get_ranked_players(db):
-    """Return all OWGR-ranked players with ranking."""
+def _get_ranked_players(db, max_rank=200):
+    """Return OWGR-ranked players up to max_rank."""
     conn = sqlite3.connect(db.db_path)
     try:
         cur = conn.cursor()
@@ -59,9 +63,9 @@ def _get_ranked_players(db):
         df = pd.read_sql("""
             SELECT player_name, ranking
             FROM owgr_rankings
-            WHERE ranking <= 300
+            WHERE ranking <= ?
             ORDER BY ranking
-        """, conn)
+        """, conn, params=[max_rank])
     finally:
         conn.close()
     return df
@@ -107,23 +111,23 @@ def _batch_recent_form(db, player_names):
     return result
 
 
-def _batch_course_history(db, player_names, tournament_names):
-    """Fetch course history for players x tournaments in one query."""
-    if not player_names or not tournament_names:
+def _get_course_history(db, player_names, tournament_name):
+    """Fetch course history for players at a single tournament."""
+    if not player_names:
         return {}
 
     conn = sqlite3.connect(db.db_path)
-    p_ph = ",".join(["?"] * len(player_names))
-    t_ph = ",".join(["?"] * len(tournament_names))
+    placeholders = ",".join(["?"] * len(player_names))
     try:
         df = pd.read_sql(f"""
-            SELECT player_name, tournament_name, position
+            SELECT player_name, position, earnings, year
             FROM tournament_results
-            WHERE player_name IN ({p_ph})
-              AND tournament_name IN ({t_ph})
+            WHERE player_name IN ({placeholders})
+              AND tournament_name = ?
               AND position IS NOT NULL
               AND position != 'None'
-        """, conn, params=player_names + tournament_names)
+            ORDER BY year DESC
+        """, conn, params=player_names + [tournament_name])
     finally:
         conn.close()
 
@@ -133,53 +137,27 @@ def _batch_course_history(db, player_names, tournament_names):
     df["position_clean"] = df["position"].astype(str).str.replace("T", "", regex=False)
     df["position_numeric"] = pd.to_numeric(df["position_clean"], errors="coerce")
     df["made_cut"] = df["position_numeric"] <= 70
+    df["earnings_num"] = pd.to_numeric(df["earnings"], errors="coerce").fillna(0)
 
     result = {}
-    for (player, tourn), grp in df.groupby(["player_name", "tournament_name"]):
+    for player, grp in df.groupby("player_name"):
         made = grp[grp["made_cut"]]
-        result[(player, tourn)] = {
+        result[player] = {
             "appearances": len(grp),
             "avg_finish": made["position_numeric"].mean() if not made.empty else None,
-            "best_finish": grp["position_numeric"].min() if not grp["position_numeric"].isna().all() else 999,
+            "best_finish": int(grp["position_numeric"].min()) if not grp["position_numeric"].isna().all() else None,
             "wins": int((grp["position_numeric"] == 1).sum()),
             "top_10s": int((grp["position_numeric"] <= 10).sum()),
             "made_cuts": int(grp["made_cut"].sum()),
+            "total_earnings": grp["earnings_num"].sum(),
         }
     return result
 
-
-_EMPTY_COURSE = {
-    "appearances": 0, "avg_finish": None, "best_finish": 999,
-    "wins": 0, "top_10s": 0, "made_cuts": 0,
-}
 
 _EMPTY_RECENT = {
     "recent_events": 0, "recent_avg_finish": 999,
     "recent_top10s": 0, "recent_made_cuts": 0, "recent_cut_rate": 0,
 }
-
-
-def _purse_tier(purse, median_purse):
-    """Return a tier label based on purse relative to median."""
-    if purse >= median_purse * 1.3:
-        return "Elite"
-    if purse >= median_purse * 0.9:
-        return "Premium"
-    return "Standard"
-
-
-def _course_history_summary(ch):
-    """One-line summary of course history."""
-    if ch["appearances"] == 0:
-        return "No history"
-    parts = [f"{ch['appearances']} apps"]
-    if ch["wins"]:
-        parts.append(f"{ch['wins']}W")
-    if ch["top_10s"]:
-        parts.append(f"{ch['top_10s']} top-10s")
-    if ch["avg_finish"] and ch["avg_finish"] < 999:
-        parts.append(f"avg {ch['avg_finish']:.0f}")
-    return ", ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -191,104 +169,87 @@ def render_season_planner(db):
 
     st.header("Season Planner")
     st.caption(
-        "Plan your One-and-Done picks across the season. "
-        "Scores combine OWGR, recent form, and course history (0–100)."
+        "Review the premium upcoming tournaments and decide where to deploy "
+        "your best remaining players."
     )
 
     used_players = db.get_used_players()
 
-    # ── Load data ──────────────────────────────────────────────────────
-    upcoming = _load_upcoming_tournaments(db)
-    if upcoming.empty:
-        st.info("No upcoming tournaments on the 2026 schedule.")
+    # ── Load premium tournaments ───────────────────────────────────────
+    min_purse = 15_000_000
+    premium = _load_upcoming_tournaments(db, min_purse=min_purse)
+
+    if premium.empty:
+        st.info("No upcoming tournaments with purse above $15M.")
         return
 
-    ranked_df = _get_ranked_players(db)
+    # ── Load all upcoming for context ──────────────────────────────────
+    all_upcoming = _load_upcoming_tournaments(db)
+
+    # ── Load available players ─────────────────────────────────────────
+    ranked_df = _get_ranked_players(db, max_rank=200)
     if ranked_df.empty:
         st.warning("No OWGR rankings data available. Refresh rankings first.")
         return
 
     available_df = ranked_df[~ranked_df["player_name"].isin(used_players)].copy()
+    player_names = available_df["player_name"].tolist()
 
-    # ── Controls ───────────────────────────────────────────────────────
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        num_tournaments = st.slider(
-            "Tournaments to show", 4, min(12, len(upcoming)), min(8, len(upcoming)),
-            key="sp_num_tourn",
-        )
-    with col2:
-        num_players = st.slider(
-            "Top players to show", 10, 50, 30, key="sp_num_players",
-        )
-    with col3:
-        st.metric("Players Used", len(used_players))
-
-    display_tournaments = upcoming.head(num_tournaments)
-    tournament_names = display_tournaments["tournament_name"].tolist()
-
-    # ── Compute recent form + base values ──────────────────────────────
-    all_names = available_df["player_name"].tolist()
-    recent_form = _batch_recent_form(db, all_names)
+    # ── Compute recent form for available players ──────────────────────
+    recent_form = _batch_recent_form(db, player_names)
     value_calc = ValueCalculator(db_path=db.db_path)
 
-    rows = []
-    for _, r in available_df.iterrows():
-        name = r["player_name"]
-        owgr = int(r["ranking"])
-        rf = recent_form.get(name, _EMPTY_RECENT)
-        player_data = pd.Series({
-            "events": 0, "wins": 0, "top_10s": 0,
-            "avg_finish": None, "best_finish": 999, "made_cuts": 0,
-            "recent_avg_finish": rf["recent_avg_finish"],
-            "recent_events": rf["recent_events"],
-            "recent_cut_rate": rf["recent_cut_rate"],
-            "recent_top10s": rf["recent_top10s"],
-            "recent_made_cuts": rf["recent_made_cuts"],
-            "owgr_numeric": owgr,
+    # ── Summary: Premium tournament schedule ───────────────────────────
+    st.subheader("Premium Tournaments")
+
+    summary_data = []
+    for _, t in premium.iterrows():
+        non_premium_before = len(all_upcoming[
+            (all_upcoming["date_parsed"] < t["date_parsed"]) &
+            (all_upcoming["purse"] < min_purse)
+        ])
+        summary_data.append({
+            "Tournament": t["tournament_name"],
+            "Date": t["date_display"],
+            "Purse": t["purse_display"],
+            "Weeks Away": max(0, non_premium_before),
         })
-        base = value_calc.calculate_value(player_data)["final_value_score"]
-        rows.append({"player_name": name, "owgr": owgr, "base_value": round(base, 1), **rf})
 
-    base_df = pd.DataFrame(rows).sort_values("base_value", ascending=False)
-    top_players = base_df.head(num_players).copy()
-
-    remaining_options = [
-        n for n in base_df["player_name"]
-        if n not in top_players["player_name"].values
-    ]
-    additional = st.multiselect(
-        "Add specific players:", options=remaining_options, key="sp_add_players",
+    st.dataframe(
+        pd.DataFrame(summary_data),
+        hide_index=True, use_container_width=True,
     )
-    if additional:
-        extra = base_df[base_df["player_name"].isin(additional)]
-        top_players = pd.concat([top_players, extra], ignore_index=True)
 
-    if top_players.empty:
-        st.warning("No available players to display.")
-        return
+    st.metric("Available Top-200 Players", len(available_df))
 
-    player_names = top_players["player_name"].tolist()
+    st.divider()
 
-    # ── Batch fetch course history & build value matrix ────────────────
-    course_hist = _batch_course_history(db, player_names, tournament_names)
+    # ── Per-tournament player recommendations ──────────────────────────
+    for t_idx, (_, t_row) in enumerate(premium.iterrows()):
+        t_name = t_row["tournament_name"]
 
-    matrix_data = []
-    for _, p_row in top_players.iterrows():
-        name = p_row["player_name"]
-        owgr = p_row["owgr"]
-        rf = {k: p_row.get(k, _EMPTY_RECENT[k]) for k in _EMPTY_RECENT}
+        st.subheader(f"{t_name}")
+        st.caption(f"{t_row['date_display']} | {t_row['purse_display']}")
 
-        row = {"Player": name, "OWGR": owgr, "Base": p_row["base_value"]}
-        for t_name in tournament_names:
-            ch = course_hist.get((name, t_name), _EMPTY_COURSE)
+        # Fetch course history for all available players at this tournament
+        course_hist = _get_course_history(db, player_names, t_name)
+
+        # Compute value scores for top players at this tournament
+        player_rows = []
+        for _, p_row in available_df.iterrows():
+            name = p_row["player_name"]
+            owgr = int(p_row["ranking"])
+            rf = recent_form.get(name, _EMPTY_RECENT)
+            ch = course_hist.get(name, {})
+
+            appearances = ch.get("appearances", 0)
             player_data = pd.Series({
-                "events": ch["appearances"],
-                "wins": ch["wins"],
-                "top_10s": ch["top_10s"],
-                "avg_finish": ch["avg_finish"] if ch["avg_finish"] and ch["avg_finish"] < 999 else None,
-                "best_finish": ch["best_finish"] if ch["best_finish"] < 999 else 999,
-                "made_cuts": ch["made_cuts"],
+                "events": appearances,
+                "wins": ch.get("wins", 0),
+                "top_10s": ch.get("top_10s", 0),
+                "avg_finish": ch.get("avg_finish") if ch.get("avg_finish") and ch["avg_finish"] < 999 else None,
+                "best_finish": ch.get("best_finish", 999) or 999,
+                "made_cuts": ch.get("made_cuts", 0),
                 "recent_avg_finish": rf["recent_avg_finish"],
                 "recent_events": rf["recent_events"],
                 "recent_cut_rate": rf["recent_cut_rate"],
@@ -296,189 +257,70 @@ def render_season_planner(db):
                 "recent_made_cuts": rf["recent_made_cuts"],
                 "owgr_numeric": owgr,
             })
-            score = value_calc.calculate_value(player_data)["final_value_score"]
-            row[t_name] = round(score, 1)
-        matrix_data.append(row)
+            result = value_calc.calculate_value(player_data)
+            value = round(result["final_value_score"], 1)
 
-    matrix_df = pd.DataFrame(matrix_data)
+            # Course history display
+            if appearances > 0:
+                parts = [f"{appearances} starts"]
+                if ch.get("wins"):
+                    parts.append(f"{ch['wins']}W")
+                if ch.get("top_10s"):
+                    parts.append(f"{ch['top_10s']} T10s")
+                if ch.get("best_finish"):
+                    parts.append(f"best: {ch['best_finish']}")
+                if ch.get("avg_finish") and ch["avg_finish"] < 999:
+                    parts.append(f"avg: {ch['avg_finish']:.0f}")
+                if ch.get("total_earnings", 0) > 0:
+                    parts.append(f"${ch['total_earnings']:,.0f}")
+                history_str = ", ".join(parts)
+            else:
+                history_str = "No history"
 
-    # ── Purse data ──────────────────────────────────────────────────────
-    purse_by_tourn = dict(zip(
-        display_tournaments["tournament_name"],
-        display_tournaments["purse"],
-    ))
-    median_purse = display_tournaments["purse"].median()
-    if median_purse <= 0:
-        median_purse = 1
-
-    # ── Greedy optimal assignment: best OWGR → richest tournaments ─────
-    # Use OWGR ranking (not value score) for the assignment so that
-    # planning reflects stable ranking, not volatile recent form.
-    # Value scores still appear in the cards for week-to-week evaluation.
-    # OWGR score: rank 1 → 100, rank 300 → 0  (higher = better)
-    pairs = []
-    for _, r in matrix_df.iterrows():
-        owgr = r["OWGR"]
-        owgr_score = max(0.0, (300.0 - owgr) / 299.0 * 100.0)
-        for t in tournament_names:
-            pairs.append({
-                "player": r["Player"],
-                "owgr": int(owgr),
-                "tournament": t,
-                "value": r[t],
-                "purse": purse_by_tourn[t],
-                "weighted": owgr_score * purse_by_tourn[t],
+            player_rows.append({
+                "Player": name,
+                "OWGR": owgr,
+                "Value": value,
+                "Course History": history_str,
+                "_appearances": appearances,
+                "_value": value,
             })
 
-    pairs.sort(key=lambda x: x["weighted"], reverse=True)
+        players_df = pd.DataFrame(player_rows)
 
-    assigned_players = set()
-    assigned_tournaments = set()
-    assignments = {}  # tournament -> player
-    for p in pairs:
-        if p["player"] in assigned_players or p["tournament"] in assigned_tournaments:
-            continue
-        assignments[p["tournament"]] = p["player"]
-        assigned_players.add(p["player"])
-        assigned_tournaments.add(p["tournament"])
-        if len(assigned_tournaments) >= len(tournament_names):
-            break
+        # Filters
+        col_a, col_b = st.columns(2)
+        with col_a:
+            show_history_only = st.checkbox(
+                "Only players with course history",
+                key=f"sp_hist_{t_idx}",
+            )
+        with col_b:
+            max_owgr = st.slider(
+                "Max OWGR", 10, 200, 50, key=f"sp_owgr_{t_idx}",
+            )
 
-    # ==================================================================
-    # SECTION 1: Tournament Cards with assigned picks
-    # ==================================================================
-    st.subheader("Optimal Pick Assignment")
-    st.caption(
-        "Each player is assigned to ONE tournament where they create the most value "
-        "(player skill × tournament purse). Best players go to the richest events."
-    )
+        filtered = players_df[players_df["OWGR"] <= max_owgr].copy()
+        if show_history_only:
+            filtered = filtered[filtered["_appearances"] > 0]
 
-    for i in range(0, len(tournament_names), 2):
-        cols = st.columns(2)
-        for j, col in enumerate(cols):
-            idx = i + j
-            if idx >= len(tournament_names):
-                break
-            t_name = tournament_names[idx]
-            t_row = display_tournaments.iloc[idx]
-            purse = purse_by_tourn[t_name]
-            tier = _purse_tier(purse, median_purse)
-            assigned = assignments.get(t_name)
+        # Sort by value descending
+        filtered = filtered.sort_values("_value", ascending=False).head(15)
 
-            with col:
-                st.markdown(f"**{t_name}**")
-                st.caption(f"{t_row['date_display']} | {t_row['purse_display']} | {tier}")
+        if filtered.empty:
+            st.info("No players match the current filters.")
+        else:
+            st.dataframe(
+                filtered[["Player", "OWGR", "Value", "Course History"]],
+                hide_index=True,
+                use_container_width=True,
+                column_config={
+                    "Player": st.column_config.TextColumn("Player", width="medium"),
+                    "OWGR": st.column_config.NumberColumn("OWGR", format="%d", width="small"),
+                    "Value": st.column_config.NumberColumn("Value", format="%.1f", width="small",
+                        help="0-100 score combining OWGR (35%), recent form (50%), course history (5%), model (10%)"),
+                    "Course History": st.column_config.TextColumn("Course History", width="large"),
+                },
+            )
 
-                # Build card: assigned pick on top, then alternates
-                card_rows = []
-
-                if assigned:
-                    a_row = matrix_df[matrix_df["Player"] == assigned].iloc[0]
-                    ch = course_hist.get((assigned, t_name), _EMPTY_COURSE)
-                    card_rows.append({
-                        "": ">>> PICK",
-                        "Player": assigned,
-                        "OWGR": int(a_row["OWGR"]),
-                        "Value": a_row[t_name],
-                        "Course Hx": _course_history_summary(ch),
-                    })
-
-                # Alternates: top players by value for this tournament,
-                # excluding anyone already assigned to a different tournament
-                for _, r in matrix_df.nlargest(20, t_name).iterrows():
-                    if r["Player"] == assigned:
-                        continue
-                    if r["Player"] in assigned_players and assignments.get(t_name) != r["Player"]:
-                        assigned_to = [t for t, p in assignments.items() if p == r["Player"]]
-                        alt_label = f"(@ {assigned_to[0][:15]})" if assigned_to else ""
-                    else:
-                        alt_label = ""
-                    ch = course_hist.get((r["Player"], t_name), _EMPTY_COURSE)
-                    card_rows.append({
-                        "": alt_label,
-                        "Player": r["Player"],
-                        "OWGR": int(r["OWGR"]),
-                        "Value": r[t_name],
-                        "Course Hx": _course_history_summary(ch),
-                    })
-                    if len(card_rows) >= 5:
-                        break
-
-                st.dataframe(
-                    pd.DataFrame(card_rows),
-                    hide_index=True, use_container_width=True,
-                )
-
-        if i + 2 < len(tournament_names):
-            st.divider()
-
-    # ==================================================================
-    # SECTION 2: Player Deployment Timeline
-    # ==================================================================
-    st.divider()
-    st.subheader("Player Deployment Timeline")
-    st.caption(
-        "Value score at each tournament. "
-        "Taller bars = better fit. Bar color = purse tier. "
-        "Star marks the assigned tournament for each player."
-    )
-
-    # Build a lookup for which tournament each player is assigned to
-    player_assignment = {p: t for t, p in assignments.items()}
-
-    top_10_names = top_players.head(10)["player_name"].tolist()
-    timeline_players = st.multiselect(
-        "Players to chart:",
-        options=player_names,
-        default=top_10_names[:5],
-        key="sp_timeline_players",
-    )
-
-    if timeline_players:
-        short_labels = []
-        for _, t_row in display_tournaments.iterrows():
-            short = t_row["tournament_name"][:18]
-            short_labels.append(f"{short}\n{t_row['date_display']}\n{t_row['purse_display']}")
-
-        fig = go.Figure()
-        for player in timeline_players:
-            p_row = matrix_df[matrix_df["Player"] == player]
-            if p_row.empty:
-                continue
-            p_row = p_row.iloc[0]
-            values = [p_row[t] for t in tournament_names]
-            assigned_t = player_assignment.get(player, "")
-
-            hover = []
-            for k, t in enumerate(tournament_names):
-                star = " ★ ASSIGNED" if t == assigned_t else ""
-                ch = course_hist.get((player, t), _EMPTY_COURSE)
-                hover.append(
-                    f"<b>{player}</b><br>{t}<br>"
-                    f"Value: {values[k]:.1f}{star}<br>"
-                    f"Purse: {display_tournaments.iloc[k]['purse_display']}<br>"
-                    f"History: {_course_history_summary(ch)}"
-                )
-
-            fig.add_trace(go.Bar(
-                name=f"{player} (#{int(p_row['OWGR'])})",
-                x=short_labels,
-                y=values,
-                hovertext=hover,
-                hoverinfo="text",
-            ))
-
-        fig.update_layout(
-            barmode="group",
-            height=500,
-            yaxis_title="Value Score",
-            xaxis_title="",
-            legend=dict(
-                orientation="h", yanchor="bottom", y=1.02,
-                xanchor="center", x=0.5,
-            ),
-            margin=dict(b=100),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Select players above to see the timeline chart.")
+        st.divider()
