@@ -92,8 +92,8 @@ def main():
         except Exception:
             pass
 
-        # Update ESPN Data expander
-        with st.expander("Update ESPN Data"):
+        # Update Data expander
+        with st.expander("Update Data"):
             if st.button("Update Tournament Results", use_container_width=True):
                 fetcher = st.session_state.fetcher
                 db = st.session_state.db
@@ -218,6 +218,34 @@ def main():
                                 last_updated TEXT NOT NULL
                             )
                         """)
+                        # Ensure player_aliases table exists for name matching
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS player_aliases (
+                                alias_name TEXT PRIMARY KEY,
+                                official_name TEXT NOT NULL,
+                                notes TEXT
+                            )
+                        """)
+                        # Seed known aliases if table is empty
+                        cursor.execute("SELECT COUNT(*) FROM player_aliases")
+                        if cursor.fetchone()[0] == 0:
+                            _aliases = [
+                                ('Kevin Yu', 'Chun-an Yu', 'Uses Western first name'),
+                                ('C.T. Pan', 'Cheng-Tsung Pan', 'Uses initials'),
+                                ('K.H. Lee', 'Kyoung-Hoon Lee', 'Uses initials'),
+                                ('S.H. Kim', 'Si Woo Kim', 'Uses initials (sometimes)'),
+                                ('Byeong Hun An', 'Ben An', 'Uses both names'),
+                                ('Ben An', 'Byeong Hun An', 'Reverse alias'),
+                                ('Zecheng Dou', 'Marty Dou Zecheng', 'Uses part of full name'),
+                                ('Daniel Brown', 'Daniel Brown(Oct1994)', 'Birth date disambiguation'),
+                                ('Dan Brown', 'Daniel Brown(Oct1994)', 'Shortened first name'),
+                            ]
+                            for alias, official, notes in _aliases:
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO player_aliases
+                                    (alias_name, official_name, notes)
+                                    VALUES (?, ?, ?)
+                                """, (alias, official, notes))
                         cursor.execute("DELETE FROM owgr_rankings")
                         timestamp = _dt.now().isoformat()
                         for pname, rank in rankings.items():
@@ -239,6 +267,50 @@ def main():
                         st.rerun()
                     else:
                         owgr_status.warning("No valid rankings found in the CSV file.")
+
+            if st.button("Refresh Tournament Field", use_container_width=True):
+                from utils.fetch_tournament_field import fetch_field_by_tournament_id
+                import sqlite3 as _sq3
+
+                field_status = st.empty()
+                field_status.text("Finding upcoming tournament...")
+
+                _conn3 = _sq3.connect(st.session_state.db.db_path)
+                _cur3 = _conn3.cursor()
+
+                # Find the next upcoming (or most recent) tournament from 2026 schedule
+                _cur3.execute("""
+                    SELECT tournament_name, tournament_id, date
+                    FROM tournament_2026_ids
+                    WHERE date >= date('now', '-5 days')
+                    ORDER BY date ASC
+                    LIMIT 1
+                """)
+                upcoming = _cur3.fetchone()
+                _conn3.close()
+
+                if upcoming:
+                    t_name, t_id, t_date = upcoming
+                    field_status.text(f"Fetching field for {t_name}...")
+                    field = fetch_field_by_tournament_id(t_id)
+                    if field:
+                        # Cache in session state so field_view can use it
+                        st.session_state.cached_field = {
+                            'tournament_name': t_name,
+                            'tournament_id': t_id,
+                            'players': field,
+                        }
+                        field_status.success(
+                            f"**{t_name}** — {len(field)} players in field. "
+                            f"Go to 'In the Field' tab to analyze."
+                        )
+                    else:
+                        field_status.warning(
+                            f"**{t_name}** — Field not yet published on ESPN. "
+                            f"Check back Tuesday/Wednesday."
+                        )
+                else:
+                    field_status.warning("No upcoming tournament found in the 2026 schedule.")
 
         st.divider()
 

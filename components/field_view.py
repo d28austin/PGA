@@ -24,53 +24,61 @@ def render_field_view(tournament_name, db, fetcher):
         tournament_id_used = None
         field_year = None  # Track which year the field is from
 
-        # Strategy 1: Check our 2026 tournament ID table
+        # Strategy 0: Check for cached field from sidebar "Refresh Tournament Field" button
+        cached = st.session_state.get('cached_field')
+        if cached and cached['tournament_name'].lower() == tournament_name.lower():
+            field_players = cached['players']
+            tournament_id_used = cached['tournament_id']
+            field_year = 2026
+
+        # Strategy 1: Check our 2026 tournament ID table (skip if cache already provided field)
         conn = sqlite3.connect(db.db_path)
         cursor = conn.cursor()
 
-        # Check if tournament_2026_ids table exists
-        cursor.execute("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='tournament_2026_ids'
-        """)
-
-        if cursor.fetchone():
-            # Try exact match first
+        if not field_players:
+            # Check if tournament_2026_ids table exists
             cursor.execute("""
-                SELECT tournament_id, tournament_name
-                FROM tournament_2026_ids
-                WHERE LOWER(tournament_name) = LOWER(?)
-            """, (tournament_name,))
-            result = cursor.fetchone()
+                SELECT name FROM sqlite_master
+                WHERE type='table' AND name='tournament_2026_ids'
+            """)
 
-            if result:
-                tournament_id = result[0]
-                found_name = result[1]
-                st.info(f"Found 2026 tournament: {found_name} (ID: {tournament_id})")
-                field_players = fetch_field_by_tournament_id(tournament_id)
-                if field_players:
-                    tournament_id_used = tournament_id
-                    field_year = 2026
-
-            # Try partial match if exact didn't work
-            if not field_players:
+            if cursor.fetchone():
+                # Try exact match first
                 cursor.execute("""
                     SELECT tournament_id, tournament_name
                     FROM tournament_2026_ids
-                    WHERE LOWER(tournament_name) LIKE LOWER(?)
-                    OR LOWER(?) LIKE LOWER(tournament_name)
-                    LIMIT 1
-                """, (f'%{tournament_name}%', f'%{tournament_name}%'))
+                    WHERE LOWER(tournament_name) = LOWER(?)
+                """, (tournament_name,))
                 result = cursor.fetchone()
 
                 if result:
                     tournament_id = result[0]
                     found_name = result[1]
-                    st.info(f"Found similar 2026 tournament: {found_name} (ID: {tournament_id})")
+                    st.info(f"Found 2026 tournament: {found_name} (ID: {tournament_id})")
                     field_players = fetch_field_by_tournament_id(tournament_id)
                     if field_players:
                         tournament_id_used = tournament_id
                         field_year = 2026
+
+                # Try partial match if exact didn't work
+                if not field_players:
+                    cursor.execute("""
+                        SELECT tournament_id, tournament_name
+                        FROM tournament_2026_ids
+                        WHERE LOWER(tournament_name) LIKE LOWER(?)
+                        OR LOWER(?) LIKE LOWER(tournament_name)
+                        LIMIT 1
+                    """, (f'%{tournament_name}%', f'%{tournament_name}%'))
+                    result = cursor.fetchone()
+
+                    if result:
+                        tournament_id = result[0]
+                        found_name = result[1]
+                        st.info(f"Found similar 2026 tournament: {found_name} (ID: {tournament_id})")
+                        field_players = fetch_field_by_tournament_id(tournament_id)
+                        if field_players:
+                            tournament_id_used = tournament_id
+                            field_year = 2026
 
         conn.close()
 
@@ -626,6 +634,47 @@ def render_field_view(tournament_name, db, fetcher):
     # Sort by value score (highest first)
     player_stats = player_stats.sort_values('value_numeric', ascending=False)
 
+    # --- Field Strength Indicator ---
+    ranked_players = player_stats[player_stats['owgr_numeric'] < 9999]
+    if not ranked_players.empty:
+        avg_owgr = ranked_players['owgr_numeric'].mean()
+        top_25_count = (ranked_players['owgr_numeric'] <= 25).sum()
+        top_50_count = (ranked_players['owgr_numeric'] <= 50).sum()
+        avg_value = player_stats['value_numeric'].mean()
+
+        # Determine field rating
+        if avg_owgr <= 40:
+            field_rating, field_icon = "Elite", "\U0001f525"
+        elif avg_owgr <= 70:
+            field_rating, field_icon = "Strong", "\U0001f4aa"
+        elif avg_owgr <= 100:
+            field_rating, field_icon = "Average", "\U0001f4ca"
+        else:
+            field_rating, field_icon = "Weak", "\U0001f4c9"
+
+        st.subheader(f"{field_icon} Field Strength: {field_rating}")
+        fs_cols = st.columns(4)
+        with fs_cols[0]:
+            st.metric("Avg OWGR", f"{avg_owgr:.0f}")
+        with fs_cols[1]:
+            st.metric("Top-25 Players", int(top_25_count))
+        with fs_cols[2]:
+            st.metric("Top-50 Players", int(top_50_count))
+        with fs_cols[3]:
+            st.metric("Avg Value Score", f"{avg_value:.1f}")
+
+        # Strategic advice based on field rating
+        if field_rating == "Elite":
+            st.success("\U0001f525 **Elite Field** — Packed with top-ranked players. A strong week to use a premium pick if you have a high-confidence option.")
+        elif field_rating == "Strong":
+            st.info("\U0001f4aa **Strong Field** — Solid competition this week. Good candidates available, but don't burn your best pick without an edge.")
+        elif field_rating == "Average":
+            st.warning("\U0001f4ca **Average Field** — Mid-tier competition. Consider saving top OWGR picks for stronger weeks.")
+        else:
+            st.warning("\U0001f4c9 **Weak Field** — Thin field this week. Save elite players for bigger events and target a mid-tier value play.")
+
+        st.divider()
+
     # Get year range for historical data
     years_in_data = sorted(field_history_df['year'].unique())
     if len(years_in_data) > 0:
@@ -866,6 +915,89 @@ SCORE RANGES:
 
     if selected_analysis_player:
         render_player_quick_analysis(selected_analysis_player, tournament_name, db, field_history_df, tournament_par)
+
+    # --- Head-to-Head Comparison ---
+    st.divider()
+    st.subheader("\u2694\ufe0f Head-to-Head Comparison")
+
+    compare_players = st.multiselect(
+        "Select 2-3 players to compare:",
+        options=player_list,
+        max_selections=3,
+        key="h2h_compare"
+    )
+
+    if len(compare_players) >= 2:
+        compare_df = player_stats[player_stats['player_name'].isin(compare_players)].copy()
+
+        # Build comparison data
+        comparison_rows = []
+        for _, row in compare_df.iterrows():
+            made_cut_pct = (row['made_cuts'] / row['appearances'] * 100) if row['appearances'] > 0 else None
+            comparison_rows.append({
+                'Player': row['player_name'],
+                'Value Score': row['value_numeric'],
+                'OWGR': row['owgr'],
+                'Status': row['status'],
+                'Last 5 Avg Finish': round(row['last_5_avg'], 1) if pd.notna(row['last_5_avg']) else None,
+                'Last 5 Cut %': f"{row['last_5_cut_pct']:.0f}%" if pd.notna(row['last_5_cut_pct']) and row['last_5_cut_pct'] > 0 else None,
+                'Last 10 Avg Finish': round(row['last_10_avg'], 1) if pd.notna(row['last_10_avg']) else None,
+                'Last 10 Cut %': f"{row['last_10_cut_pct']:.0f}%" if pd.notna(row['last_10_cut_pct']) and row['last_10_cut_pct'] > 0 else None,
+                'Course Appearances': int(row['appearances']),
+                'Course Avg Finish': round(row['avg_finish'], 1) if pd.notna(row['avg_finish']) and row['avg_finish'] < 999 else None,
+                'Course Best Finish': int(row['best_finish']) if pd.notna(row['best_finish']) and row['best_finish'] < 999 else None,
+                'Course Top 10s': int(row['top_10s']),
+                'Course Cut %': f"{made_cut_pct:.0f}%" if made_cut_pct is not None else None,
+            })
+
+        # Transpose: rows = stats, columns = players
+        comp_table = pd.DataFrame(comparison_rows).set_index('Player').T
+        comp_table.index.name = 'Metric'
+
+        st.dataframe(comp_table, use_container_width=True)
+
+        # Grouped bar chart for key numeric metrics
+        import plotly.graph_objects as go
+
+        chart_metrics = {
+            'Value Score': 'value_numeric',
+            'OWGR (lower is better)': 'owgr_numeric',
+            'L5 Avg Finish': 'last_5_avg',
+            'Course Avg Finish': 'avg_finish',
+        }
+
+        fig = go.Figure()
+        for _, row in compare_df.iterrows():
+            values = []
+            for label, col in chart_metrics.items():
+                val = row[col]
+                if col == 'owgr_numeric' and val >= 9999:
+                    val = None
+                elif pd.isna(val):
+                    val = None
+                values.append(val)
+
+            fig.add_trace(go.Bar(
+                name=row['player_name'],
+                x=list(chart_metrics.keys()),
+                y=values,
+                text=[f"{v:.1f}" if v is not None else "N/A" for v in values],
+                textposition='outside'
+            ))
+
+        fig.update_layout(
+            barmode='group',
+            title='Key Metrics Comparison',
+            yaxis_title='Value',
+            height=400,
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='center', x=0.5)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.caption("Note: For OWGR and Avg Finish, lower values indicate better performance.")
+
+    elif len(compare_players) == 1:
+        st.info("Select at least one more player to compare.")
 
     # Insights
     st.divider()
