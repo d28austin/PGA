@@ -17,6 +17,104 @@ from components.value_calculator import ValueCalculator
 # Data helpers
 # ---------------------------------------------------------------------------
 
+def _normalize_ascii(s):
+    """Strip accented characters to plain ASCII for fuzzy matching."""
+    return (s
+        .replace('å', 'a').replace('Å', 'A')
+        .replace('ä', 'a').replace('Ä', 'A')
+        .replace('ö', 'o').replace('Ö', 'O')
+        .replace('ø', 'o').replace('Ø', 'O')
+        .replace('ñ', 'n').replace('Ñ', 'N')
+        .replace('é', 'e').replace('É', 'E')
+        .replace('á', 'a').replace('Á', 'A')
+        .replace('í', 'i').replace('Í', 'I')
+        .replace('ó', 'o').replace('Ó', 'O')
+        .replace('ú', 'u').replace('Ú', 'U')
+        .replace('ü', 'u').replace('Ü', 'U'))
+
+
+# Manual overrides for ambiguous name matches where automatic resolution
+# would pick the wrong player (e.g. multiple S. Kim variants).
+_NAME_OVERRIDES = {
+    "Seonghyeon Kim": "S.H. Kim",
+    "Chun-an Yu": "Carl Yuan",
+}
+
+
+def _resolve_player_names(db, owgr_names):
+    """Map OWGR player names to their tournament_results equivalents.
+
+    Handles special-character mismatches (Åberg vs Aberg) and common
+    name abbreviations (Sam vs Samuel).  Returns a dict of
+    {owgr_name: results_name} for every name that has results data.
+    Names with an exact match map to themselves.
+    """
+    if not owgr_names:
+        return {}
+
+    conn = sqlite3.connect(db.db_path)
+    cursor = conn.cursor()
+
+    # Build a set of all distinct player names in results for quick lookup
+    cursor.execute("SELECT DISTINCT player_name FROM tournament_results")
+    all_results_names = {r[0] for r in cursor.fetchall()}
+
+    # Pre-compute normalized last names for fuzzy matching
+    results_by_norm_last = {}
+    for rn in all_results_names:
+        parts = rn.split()
+        if parts:
+            norm_last = _normalize_ascii(parts[-1]).lower()
+            results_by_norm_last.setdefault(norm_last, []).append(rn)
+
+    mapping = {}
+
+    for name in owgr_names:
+        # Check manual overrides first
+        if name in _NAME_OVERRIDES:
+            override = _NAME_OVERRIDES[name]
+            if override in all_results_names:
+                mapping[name] = override
+                continue
+
+        # Exact match — most common case
+        if name in all_results_names:
+            mapping[name] = name
+            continue
+
+        parts = name.split()
+        if len(parts) < 2:
+            continue
+
+        first_initial = parts[0][0].upper()
+        last_name_norm = _normalize_ascii(parts[-1]).lower()
+
+        # Find candidates with same normalized last name and first initial
+        candidates = [
+            rn for rn in results_by_norm_last.get(last_name_norm, [])
+            if _normalize_ascii(rn[0]).upper() == first_initial
+        ]
+
+        if len(candidates) == 1:
+            mapping[name] = candidates[0]
+        elif len(candidates) > 1:
+            # Multiple candidates — pick the one with the most results
+            placeholders = ",".join(["?"] * len(candidates))
+            cursor.execute(f"""
+                SELECT player_name, COUNT(*) as cnt
+                FROM tournament_results
+                WHERE player_name IN ({placeholders})
+                GROUP BY player_name
+                ORDER BY cnt DESC
+            """, candidates)
+            row = cursor.fetchone()
+            if row:
+                mapping[name] = row[0]
+
+    conn.close()
+    return mapping
+
+
 def _load_upcoming_tournaments(db, min_purse=0):
     """Return upcoming 2026 tournaments (no finalized results yet)."""
     conn = sqlite3.connect(db.db_path)
@@ -71,13 +169,27 @@ def _get_ranked_players(db, max_rank=200):
     return df
 
 
-def _batch_recent_form(db, player_names):
-    """Compute recent form stats (last 2-3 years) for a list of players."""
+def _batch_recent_form(db, player_names, name_map=None):
+    """Compute recent form stats (last 2-3 years) for a list of players.
+
+    *name_map* maps OWGR names → tournament_results names.  Results are
+    keyed by the OWGR name so callers can look up by the same key they
+    already use.
+    """
     if not player_names:
         return {}
 
+    name_map = name_map or {}
+    # Build the list of results-side names to query
+    query_names = list({name_map.get(n, n) for n in player_names})
+    # Reverse map: results_name → owgr_name(s)
+    reverse = {}
+    for owgr_name in player_names:
+        rn = name_map.get(owgr_name, owgr_name)
+        reverse.setdefault(rn, owgr_name)
+
     conn = sqlite3.connect(db.db_path)
-    placeholders = ",".join(["?"] * len(player_names))
+    placeholders = ",".join(["?"] * len(query_names))
     try:
         df = pd.read_sql(f"""
             SELECT player_name, position
@@ -87,7 +199,7 @@ def _batch_recent_form(db, player_names):
               AND position IS NOT NULL
               AND position != 'None'
             ORDER BY year DESC
-        """, conn, params=player_names)
+        """, conn, params=query_names)
     finally:
         conn.close()
 
@@ -101,7 +213,8 @@ def _batch_recent_form(db, player_names):
     result = {}
     for player, grp in df.groupby("player_name"):
         made = grp[grp["made_cut"]]
-        result[player] = {
+        owgr_name = reverse.get(player, player)
+        result[owgr_name] = {
             "recent_events": len(grp),
             "recent_avg_finish": made["position_numeric"].mean() if not made.empty else 999,
             "recent_top10s": int((grp["position_numeric"] <= 10).sum()),
@@ -111,13 +224,24 @@ def _batch_recent_form(db, player_names):
     return result
 
 
-def _get_course_history(db, player_names, tournament_name):
-    """Fetch course history for players at a single tournament."""
+def _get_course_history(db, player_names, tournament_name, name_map=None):
+    """Fetch course history for players at a single tournament.
+
+    *name_map* maps OWGR names → tournament_results names.  Results are
+    keyed by the OWGR name.
+    """
     if not player_names:
         return {}
 
+    name_map = name_map or {}
+    query_names = list({name_map.get(n, n) for n in player_names})
+    reverse = {}
+    for owgr_name in player_names:
+        rn = name_map.get(owgr_name, owgr_name)
+        reverse.setdefault(rn, owgr_name)
+
     conn = sqlite3.connect(db.db_path)
-    placeholders = ",".join(["?"] * len(player_names))
+    placeholders = ",".join(["?"] * len(query_names))
     try:
         df = pd.read_sql(f"""
             SELECT player_name, position, earnings, year
@@ -127,7 +251,7 @@ def _get_course_history(db, player_names, tournament_name):
               AND position IS NOT NULL
               AND position != 'None'
             ORDER BY year DESC
-        """, conn, params=player_names + [tournament_name])
+        """, conn, params=query_names + [tournament_name])
     finally:
         conn.close()
 
@@ -142,7 +266,8 @@ def _get_course_history(db, player_names, tournament_name):
     result = {}
     for player, grp in df.groupby("player_name"):
         made = grp[grp["made_cut"]]
-        result[player] = {
+        owgr_name = reverse.get(player, player)
+        result[owgr_name] = {
             "appearances": len(grp),
             "avg_finish": made["position_numeric"].mean() if not made.empty else None,
             "best_finish": int(grp["position_numeric"].min()) if not grp["position_numeric"].isna().all() else None,
@@ -195,8 +320,11 @@ def render_season_planner(db):
     available_df = ranked_df[~ranked_df["player_name"].isin(used_players)].copy()
     player_names = available_df["player_name"].tolist()
 
+    # ── Resolve OWGR names → tournament_results names ─────────────────
+    name_map = _resolve_player_names(db, player_names)
+
     # ── Compute recent form for available players ──────────────────────
-    recent_form = _batch_recent_form(db, player_names)
+    recent_form = _batch_recent_form(db, player_names, name_map=name_map)
     value_calc = ValueCalculator(db_path=db.db_path)
 
     # ── Summary: Premium tournament schedule ───────────────────────────
@@ -232,7 +360,7 @@ def render_season_planner(db):
         st.caption(f"{t_row['date_display']} | {t_row['purse_display']}")
 
         # Fetch course history for all available players at this tournament
-        course_hist = _get_course_history(db, player_names, t_name)
+        course_hist = _get_course_history(db, player_names, t_name, name_map=name_map)
 
         # Compute value scores for top players at this tournament
         player_rows = []
