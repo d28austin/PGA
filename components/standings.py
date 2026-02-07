@@ -26,15 +26,18 @@ def render_standings(db):
                 picks_map[r["tournament_name"]] = r["player_name"]
         user_picks[user] = picks_map
 
-    # ── Load completed tournaments ─────────────────────────────────────
+    # ── Load completed tournaments (those with 2026 results) ────────────
     conn = sqlite3.connect(db.db_path)
 
     try:
         schedule_df = pd.read_sql("""
-            SELECT tournament_name, date, status
-            FROM tournament_2026_ids
-            WHERE status = 'Final'
-            ORDER BY date
+            SELECT s.tournament_name, s.date
+            FROM tournament_2026_ids s
+            WHERE EXISTS (
+                SELECT 1 FROM tournament_results r
+                WHERE r.tournament_name = s.tournament_name AND r.year = 2026
+            )
+            ORDER BY s.date
         """, conn)
     except Exception:
         st.error("Could not load 2026 schedule.")
