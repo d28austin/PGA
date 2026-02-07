@@ -30,6 +30,7 @@ def render_my_picks(db):
         schedule_df = pd.read_sql("""
             SELECT tournament_name, tournament_id, date, status
             FROM tournament_2026_ids
+            WHERE tournament_name != 'The Sentry'
             ORDER BY date
         """, conn)
     except Exception:
