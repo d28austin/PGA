@@ -246,15 +246,16 @@ class PGADatabase:
         cursor = conn.cursor()
 
         # Check aliases first (e.g., Kevin Yu -> Chun-an Yu)
-        cursor.execute("""
-            SELECT official_name FROM player_aliases
-            WHERE alias_name = ?
-        """, (player_name,))
-
-        alias_result = cursor.fetchone()
-        if alias_result:
-            # Use the official name for lookup
-            player_name = alias_result[0]
+        try:
+            cursor.execute("""
+                SELECT official_name FROM player_aliases
+                WHERE alias_name = ?
+            """, (player_name,))
+            alias_result = cursor.fetchone()
+            if alias_result:
+                player_name = alias_result[0]
+        except sqlite3.OperationalError:
+            pass  # Table may not exist yet
 
         # Try exact match first
         cursor.execute("""
