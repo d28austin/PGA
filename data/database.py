@@ -88,6 +88,15 @@ class PGADatabase:
             )
         """)
 
+        # Player aliases table (for OWGR name matching)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS player_aliases (
+                alias_name TEXT PRIMARY KEY,
+                official_name TEXT NOT NULL,
+                notes TEXT
+            )
+        """)
+
         conn.commit()
         conn.close()
 
