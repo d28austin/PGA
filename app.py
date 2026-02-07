@@ -24,6 +24,58 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Mobile-responsive CSS — only activates on screens under 768px
+st.markdown("""
+<style>
+@media only screen and (max-width: 768px) {
+    /* Stack columns vertically instead of side-by-side */
+    [data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+    }
+    [data-testid="stHorizontalBlock"] > div {
+        width: 100% !important;
+        min-width: 100% !important;
+    }
+
+    /* Larger metric values and labels */
+    [data-testid="stMetricValue"] {
+        font-size: 1.3rem !important;
+    }
+    [data-testid="stMetricLabel"] {
+        font-size: 0.85rem !important;
+    }
+
+    /* Make dataframes scroll smoothly */
+    [data-testid="stDataFrame"] {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Bigger tap targets for buttons and inputs */
+    .stButton > button {
+        min-height: 48px !important;
+        font-size: 1rem !important;
+    }
+    .stSelectbox, .stMultiSelect {
+        font-size: 1rem !important;
+    }
+
+    /* Reduce excessive padding */
+    .block-container {
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    /* Make subheaders slightly smaller to save space */
+    h2 {
+        font-size: 1.3rem !important;
+    }
+    h3 {
+        font-size: 1.1rem !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Initialize session state
 if 'db' not in st.session_state:
     st.session_state.db = PGADatabase()
