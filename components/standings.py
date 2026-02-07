@@ -35,7 +35,9 @@ def render_standings(db):
             FROM tournament_2026_ids s
             WHERE EXISTS (
                 SELECT 1 FROM tournament_results r
-                WHERE r.tournament_name = s.tournament_name AND r.year = 2026
+                WHERE r.tournament_name = s.tournament_name
+                  AND r.year = 2026
+                  AND r.earnings > 0
             )
             ORDER BY s.date
         """, conn)
