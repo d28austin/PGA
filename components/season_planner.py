@@ -1,14 +1,15 @@
 """
 Season Planner — map top remaining players against upcoming tournaments.
 
-Shows a value-score matrix (players × tournaments) color-coded green→red
-so you can decide: use this player now, or save them for a better week?
+Tournament cards show the best picks per week. A player timeline chart
+shows when to deploy each of your top players across the season.
 """
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import sqlite3
+import plotly.graph_objects as go
 from components.value_calculator import ValueCalculator
 
 
@@ -50,7 +51,6 @@ def _get_ranked_players(db):
     """Return all OWGR-ranked players with ranking."""
     conn = sqlite3.connect(db.db_path)
     try:
-        # Check table exists
         cur = conn.cursor()
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='owgr_rankings'")
         if not cur.fetchone():
@@ -68,11 +68,7 @@ def _get_ranked_players(db):
 
 
 def _batch_recent_form(db, player_names):
-    """Compute recent form stats (last 2-3 years) for a list of players.
-
-    Returns dict: player_name -> {recent_events, recent_avg_finish,
-    recent_top10s, recent_made_cuts, recent_cut_rate}
-    """
+    """Compute recent form stats (last 2-3 years) for a list of players."""
     if not player_names:
         return {}
 
@@ -112,11 +108,7 @@ def _batch_recent_form(db, player_names):
 
 
 def _batch_course_history(db, player_names, tournament_names):
-    """Fetch course history for players × tournaments in one query.
-
-    Returns dict: (player_name, tournament_name) ->
-        {appearances, avg_finish, best_finish, wins, top_10s, made_cuts}
-    """
+    """Fetch course history for players x tournaments in one query."""
     if not player_names or not tournament_names:
         return {}
 
@@ -167,34 +159,55 @@ _EMPTY_RECENT = {
 }
 
 
+def _purse_tier(purse, median_purse):
+    """Return a tier label based on purse relative to median."""
+    if purse >= median_purse * 1.3:
+        return "Elite"
+    if purse >= median_purse * 0.9:
+        return "Premium"
+    return "Standard"
+
+
+def _course_history_summary(ch):
+    """One-line summary of course history."""
+    if ch["appearances"] == 0:
+        return "No history"
+    parts = [f"{ch['appearances']} apps"]
+    if ch["wins"]:
+        parts.append(f"{ch['wins']}W")
+    if ch["top_10s"]:
+        parts.append(f"{ch['top_10s']} top-10s")
+    if ch["avg_finish"] and ch["avg_finish"] < 999:
+        parts.append(f"avg {ch['avg_finish']:.0f}")
+    return ", ".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Main render function
 # ---------------------------------------------------------------------------
 
 def render_season_planner(db):
-    """Render the Season Planner matrix tab."""
+    """Render the Season Planner tab."""
 
     st.header("Season Planner")
     st.caption(
-        "Value scores (0–100) for your top remaining players at each upcoming tournament. "
-        "Green = high value, red = low value. Course history accounts for ~5 % of each score."
+        "Plan your One-and-Done picks across the season. "
+        "Scores combine OWGR, recent form, and course history (0–100)."
     )
 
     used_players = db.get_used_players()
 
-    # ── Load upcoming tournaments ──────────────────────────────────────
+    # ── Load data ──────────────────────────────────────────────────────
     upcoming = _load_upcoming_tournaments(db)
     if upcoming.empty:
         st.info("No upcoming tournaments on the 2026 schedule.")
         return
 
-    # ── Load ranked players ────────────────────────────────────────────
     ranked_df = _get_ranked_players(db)
     if ranked_df.empty:
         st.warning("No OWGR rankings data available. Refresh rankings first.")
         return
 
-    # Filter out used players
     available_df = ranked_df[~ranked_df["player_name"].isin(used_players)].copy()
 
     # ── Controls ───────────────────────────────────────────────────────
@@ -214,11 +227,9 @@ def render_season_planner(db):
     display_tournaments = upcoming.head(num_tournaments)
     tournament_names = display_tournaments["tournament_name"].tolist()
 
-    # ── Compute recent form for all available ranked players ───────────
+    # ── Compute recent form + base values ──────────────────────────────
     all_names = available_df["player_name"].tolist()
     recent_form = _batch_recent_form(db, all_names)
-
-    # ── Compute base value (no course history) to rank players ─────────
     value_calc = ValueCalculator(db_path=db.db_path)
 
     rows = []
@@ -226,7 +237,6 @@ def render_season_planner(db):
         name = r["player_name"]
         owgr = int(r["ranking"])
         rf = recent_form.get(name, _EMPTY_RECENT)
-
         player_data = pd.Series({
             "events": 0, "wins": 0, "top_10s": 0,
             "avg_finish": None, "best_finish": 999, "made_cuts": 0,
@@ -241,11 +251,8 @@ def render_season_planner(db):
         rows.append({"player_name": name, "owgr": owgr, "base_value": round(base, 1), **rf})
 
     base_df = pd.DataFrame(rows).sort_values("base_value", ascending=False)
-
-    # Take top N
     top_players = base_df.head(num_players).copy()
 
-    # Allow adding specific players via multiselect
     remaining_options = [
         n for n in base_df["player_name"]
         if n not in top_players["player_name"].values
@@ -263,28 +270,16 @@ def render_season_planner(db):
 
     player_names = top_players["player_name"].tolist()
 
-    # ── Batch fetch course history ─────────────────────────────────────
+    # ── Batch fetch course history & build value matrix ────────────────
     course_hist = _batch_course_history(db, player_names, tournament_names)
 
-    # ── Build value matrix ─────────────────────────────────────────────
     matrix_data = []
     for _, p_row in top_players.iterrows():
         name = p_row["player_name"]
         owgr = p_row["owgr"]
-        rf = {
-            "recent_avg_finish": p_row.get("recent_avg_finish", 999),
-            "recent_events": p_row.get("recent_events", 0),
-            "recent_cut_rate": p_row.get("recent_cut_rate", 0),
-            "recent_top10s": p_row.get("recent_top10s", 0),
-            "recent_made_cuts": p_row.get("recent_made_cuts", 0),
-        }
+        rf = {k: p_row.get(k, _EMPTY_RECENT[k]) for k in _EMPTY_RECENT}
 
-        row = {
-            "Player": name,
-            "OWGR": owgr,
-            "Base": p_row["base_value"],
-        }
-
+        row = {"Player": name, "OWGR": owgr, "Base": p_row["base_value"]}
         for t_name in tournament_names:
             ch = course_hist.get((name, t_name), _EMPTY_COURSE)
             player_data = pd.Series({
@@ -303,21 +298,18 @@ def render_season_planner(db):
             })
             score = value_calc.calculate_value(player_data)["final_value_score"]
             row[t_name] = round(score, 1)
-
         matrix_data.append(row)
 
     matrix_df = pd.DataFrame(matrix_data)
 
-    # ── Purse weighting ───────────────────────────────────────────────
-    # "Best Week" should factor in purse so you deploy top players at
-    # the richest events — value_score × (purse / median_purse).
+    # ── Purse weighting for strategic recommendations ──────────────────
     purse_by_tourn = dict(zip(
         display_tournaments["tournament_name"],
         display_tournaments["purse"],
     ))
     median_purse = display_tournaments["purse"].median()
     if median_purse <= 0:
-        median_purse = 1  # safety
+        median_purse = 1
 
     best_tourn_per_player = {}
     for _, r in matrix_df.iterrows():
@@ -327,108 +319,141 @@ def render_season_planner(db):
         }
         best_tourn_per_player[r["Player"]] = max(weighted, key=weighted.get)
 
-    matrix_df["Best Week"] = matrix_df["Player"].map(
-        lambda n: best_tourn_per_player.get(n, "")
-    )
+    # ==================================================================
+    # SECTION 1: Tournament Cards
+    # ==================================================================
+    st.subheader("Tournament-by-Tournament Picks")
+    st.caption("Top 5 recommended picks for each upcoming tournament, ranked by fit")
 
-    # ── Render matrix with color gradient ──────────────────────────────
-    st.subheader("Player × Tournament Value Matrix")
+    # Show cards in rows of 2
+    for i in range(0, len(tournament_names), 2):
+        cols = st.columns(2)
+        for j, col in enumerate(cols):
+            idx = i + j
+            if idx >= len(tournament_names):
+                break
+            t_name = tournament_names[idx]
+            t_row = display_tournaments.iloc[idx]
+            purse = purse_by_tourn[t_name]
+            tier = _purse_tier(purse, median_purse)
 
-    # Build short column labels: "Tournament (Date, Purse)"
-    col_rename = {}
-    for _, t_row in display_tournaments.iterrows():
-        full = t_row["tournament_name"]
-        short = full[:22]
-        col_rename[full] = f"{short}\n{t_row['date_display']} | {t_row['purse_display']}"
+            with col:
+                # Card header
+                st.markdown(f"**{t_name}**")
+                st.caption(f"{t_row['date_display']} | {t_row['purse_display']} | {tier}")
 
-    display_matrix = matrix_df.rename(columns=col_rename)
-    short_tourn_cols = [col_rename[t] for t in tournament_names]
+                # Build recommendations for this tournament
+                recs = []
+                for _, r in matrix_df.nlargest(20, t_name).iterrows():
+                    best_t = best_tourn_per_player[r["Player"]]
+                    ch = course_hist.get((r["Player"], t_name), _EMPTY_COURSE)
+                    recs.append({
+                        "Player": r["Player"],
+                        "OWGR": int(r["OWGR"]),
+                        "Value": r[t_name],
+                        "Course Hx": _course_history_summary(ch),
+                        "Best Week": "Here" if best_t == t_name else best_t[:20],
+                    })
 
-    # Also rename Best Week values
-    display_matrix["Best Week"] = matrix_df["Best Week"].map(
-        lambda t: col_rename.get(t, t)[:22] if t else ""
-    )
+                rec_df = pd.DataFrame(recs)
+                # Prioritize: best-week-is-here first, then highest value
+                rec_df["_sort"] = rec_df.apply(
+                    lambda x: (0 if x["Best Week"] == "Here" else 1, -x["Value"]),
+                    axis=1,
+                )
+                rec_df = rec_df.sort_values("_sort").head(5).drop(columns=["_sort"])
+                st.dataframe(rec_df, hide_index=True, use_container_width=True)
 
-    # Apply color gradient on tournament columns
-    styled = display_matrix.style.background_gradient(
-        cmap="RdYlGn", subset=short_tourn_cols, vmin=20, vmax=80,
-    ).format(
-        {col: "{:.1f}" for col in short_tourn_cols},
-    ).format(
-        {"Base": "{:.1f}", "OWGR": "{:.0f}"},
-    )
+        if i + 2 < len(tournament_names):
+            st.divider()
 
-    st.dataframe(styled, use_container_width=True, height=700, hide_index=True)
-
-    # ── Insights ───────────────────────────────────────────────────────
+    # ==================================================================
+    # SECTION 2: Player Timeline Chart
+    # ==================================================================
     st.divider()
+    st.subheader("Player Deployment Timeline")
+    st.caption(
+        "Each bar shows a player's value score at that tournament. "
+        "Bar color reflects tournament purse tier. "
+        "Use your best players at the tallest bars in the richest (darkest) tournaments."
+    )
 
-    next_tourn = tournament_names[0]
-    next_display = display_tournaments.iloc[0]
-    next_purse = purse_by_tourn.get(next_tourn, 0)
-    next_purse_factor = next_purse / median_purse if median_purse else 1
+    # Let user pick which players to show on the timeline
+    top_10_names = top_players.head(10)["player_name"].tolist()
+    timeline_players = st.multiselect(
+        "Players to chart:",
+        options=player_names,
+        default=top_10_names[:6],
+        key="sp_timeline_players",
+    )
 
-    col_a, col_b = st.columns(2)
+    if timeline_players:
+        # Short tournament labels for x-axis
+        short_labels = []
+        for _, t_row in display_tournaments.iterrows():
+            name = t_row["tournament_name"]
+            # Take first word + abbreviate
+            short = name[:18]
+            short_labels.append(f"{short}\n{t_row['date_display']}")
 
-    with col_a:
-        st.subheader(f"Best Picks: {next_tourn}")
-        st.caption(f"{next_display['date_display']} | Purse: {next_display['purse_display']}")
+        # Color scale by purse tier
+        tier_colors = {"Elite": "#1a7431", "Premium": "#2e86de", "Standard": "#7f8c8d"}
+        bar_colors = [
+            tier_colors[_purse_tier(purse_by_tourn[t], median_purse)]
+            for t in tournament_names
+        ]
 
-        # Recommend players whose best-week IS this week, or who are
-        # well-matched to the purse tier (don't waste elite players on
-        # a weak-purse event if they have a richer event coming up).
-        rec_rows = []
-        for _, r in matrix_df.nlargest(30, next_tourn).iterrows():
-            best_t = best_tourn_per_player[r["Player"]]
-            is_best_week = best_t == next_tourn
-            # How much value are you leaving on the table by using them now?
-            best_val = r[best_t]
-            this_val = r[next_tourn]
-            best_purse_f = purse_by_tourn.get(best_t, median_purse) / median_purse
-            opportunity_cost = (best_val * best_purse_f) - (this_val * next_purse_factor)
-            rec_rows.append({
-                "Player": r["Player"],
-                "OWGR": int(r["OWGR"]),
-                "Value": this_val,
-                "Best Week?": "Yes" if is_best_week else best_t,
-                "_opp_cost": opportunity_cost,
-            })
+        fig = go.Figure()
+        for player in timeline_players:
+            p_row = matrix_df[matrix_df["Player"] == player]
+            if p_row.empty:
+                continue
+            p_row = p_row.iloc[0]
+            values = [p_row[t] for t in tournament_names]
+            best_t = best_tourn_per_player.get(player, "")
 
-        rec_df = pd.DataFrame(rec_rows)
-        # Sort: players whose best week IS this week first, then by
-        # lowest opportunity cost (least wasted by using them now).
-        rec_df["_sort"] = rec_df["_opp_cost"]
-        rec_df.loc[rec_df["Best Week?"] == "Yes", "_sort"] = -1
-        rec_df = rec_df.sort_values("_sort").head(8)
-        st.dataframe(
-            rec_df[["Player", "OWGR", "Value", "Best Week?"]],
-            hide_index=True, use_container_width=True,
+            # Mark the best week with a star in hover text
+            hover = []
+            for k, t in enumerate(tournament_names):
+                star = " ★ BEST WEEK" if t == best_t else ""
+                ch = course_hist.get((player, t), _EMPTY_COURSE)
+                hover.append(
+                    f"{t}<br>Value: {values[k]:.1f}{star}"
+                    f"<br>Purse: {display_tournaments.iloc[k]['purse_display']}"
+                    f"<br>History: {_course_history_summary(ch)}"
+                )
+
+            fig.add_trace(go.Bar(
+                name=f"{player} (OWGR {int(p_row['OWGR'])})",
+                x=short_labels,
+                y=values,
+                hovertext=hover,
+                hoverinfo="text",
+                marker_color=bar_colors,
+                opacity=0.85,
+            ))
+
+        fig.update_layout(
+            barmode="group",
+            height=450,
+            yaxis_title="Value Score",
+            xaxis_title="",
+            legend=dict(
+                orientation="h", yanchor="bottom", y=1.02,
+                xanchor="center", x=0.5,
+            ),
+            margin=dict(b=80),
         )
 
-    with col_b:
-        st.subheader("Save For Later")
-        st.caption("Top players whose purse-weighted best value is a future tournament")
-        save_rows = []
-        for _, r in matrix_df.nlargest(15, "Base").iterrows():
-            best_t = best_tourn_per_player[r["Player"]]
-            if best_t != next_tourn:
-                best_date = display_tournaments.loc[
-                    display_tournaments["tournament_name"] == best_t, "date_display"
-                ]
-                best_purse = display_tournaments.loc[
-                    display_tournaments["tournament_name"] == best_t, "purse_display"
-                ]
-                date_str = best_date.iloc[0] if not best_date.empty else ""
-                purse_str = best_purse.iloc[0] if not best_purse.empty else ""
-                save_rows.append({
-                    "Player": r["Player"],
-                    "Best Tournament": best_t,
-                    "Date": date_str,
-                    "Purse": purse_str,
-                    "Value There": r[best_t],
-                    "Value Now": r[next_tourn],
-                })
-        if save_rows:
-            st.dataframe(pd.DataFrame(save_rows), hide_index=True, use_container_width=True)
-        else:
-            st.info("All top players peak this week.")
+        # Add purse-tier legend as annotation
+        fig.add_annotation(
+            text="Bar color: <b style='color:#1a7431'>Elite purse</b> | "
+                 "<b style='color:#2e86de'>Premium</b> | "
+                 "<b style='color:#7f8c8d'>Standard</b>",
+            xref="paper", yref="paper", x=0.5, y=-0.18,
+            showarrow=False, font=dict(size=11),
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Select players above to see the timeline chart.")
