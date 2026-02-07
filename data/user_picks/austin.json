@@ -1,1 +1,12 @@
-{"user": "austin", "season": "2026", "picks": []}
+{
+  "user": "austin",
+  "season": "2026",
+  "picks": [
+    {
+      "player_name": "Sam Stevens",
+      "tournament_name": "Farmers Insurance Open",
+      "week_used": "5",
+      "date_used": "2026-02-07T04:30:23.777583"
+    }
+  ]
+}
