@@ -20,43 +20,88 @@ import plotly.graph_objects as go
 
 COURSE_PROFILES = {
     # Majors
-    "Masters Tournament":            {"dist": 4, "acc": 3, "gir": 4, "putt": 5, "scr": 4},
-    "PGA Championship":              {"dist": 4, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
-    "U.S. Open":                     {"dist": 3, "acc": 5, "gir": 5, "putt": 4, "scr": 4},
+    "Masters Tournament":            {"dist": 4, "acc": 2, "gir": 4, "putt": 5, "scr": 4},
+    "PGA Championship":              {"dist": 4, "acc": 4, "gir": 4, "putt": 4, "scr": 3},
+    "U.S. Open":                     {"dist": 3, "acc": 5, "gir": 5, "putt": 5, "scr": 4},
     "The Open":                      {"dist": 3, "acc": 4, "gir": 4, "putt": 3, "scr": 5},
 
     # Signature/Elevated
-    "THE PLAYERS Championship":      {"dist": 3, "acc": 4, "gir": 4, "putt": 5, "scr": 4},
-    "The Genesis Invitational":      {"dist": 3, "acc": 4, "gir": 5, "putt": 4, "scr": 3},
-    "Arnold Palmer Invitational":    {"dist": 3, "acc": 4, "gir": 4, "putt": 4, "scr": 4},
-    "the Memorial Tournament":       {"dist": 3, "acc": 4, "gir": 4, "putt": 5, "scr": 4},
+    "THE PLAYERS Championship":      {"dist": 3, "acc": 5, "gir": 4, "putt": 5, "scr": 4},
+    "The Genesis Invitational":      {"dist": 3, "acc": 4, "gir": 5, "putt": 4, "scr": 4},
+    "Arnold Palmer Invitational":    {"dist": 4, "acc": 3, "gir": 4, "putt": 4, "scr": 4},
+    "the Memorial Tournament":       {"dist": 4, "acc": 4, "gir": 4, "putt": 5, "scr": 4},
     "AT&T Pebble Beach Pro-Am":      {"dist": 2, "acc": 4, "gir": 4, "putt": 4, "scr": 5},
-    "RBC Heritage":                  {"dist": 2, "acc": 5, "gir": 4, "putt": 3, "scr": 5},
-    "Travelers Championship":        {"dist": 3, "acc": 4, "gir": 4, "putt": 4, "scr": 3},
+    "RBC Heritage":                  {"dist": 2, "acc": 5, "gir": 4, "putt": 4, "scr": 5},
+    "Travelers Championship":        {"dist": 4, "acc": 3, "gir": 4, "putt": 5, "scr": 3},
     "Truist Championship":           {"dist": 4, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
-    "The Sentry":                    {"dist": 4, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
+    "The Sentry":                    {"dist": 5, "acc": 2, "gir": 4, "putt": 4, "scr": 3},
 
     # Standard events
-    "Farmers Insurance Open":        {"dist": 4, "acc": 3, "gir": 4, "putt": 4, "scr": 4},
-    "WM Phoenix Open":               {"dist": 5, "acc": 2, "gir": 3, "putt": 3, "scr": 2},
-    "The Honda Classic":             {"dist": 2, "acc": 4, "gir": 4, "putt": 4, "scr": 4},
+    "Farmers Insurance Open":        {"dist": 5, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
+    "WM Phoenix Open":               {"dist": 4, "acc": 2, "gir": 3, "putt": 4, "scr": 2},
+    "The Honda Classic":             {"dist": 2, "acc": 5, "gir": 4, "putt": 4, "scr": 4},
     "Valspar Championship":          {"dist": 2, "acc": 4, "gir": 4, "putt": 5, "scr": 5},
-    "Texas Children's Houston Open": {"dist": 3, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
+    "Texas Children's Houston Open": {"dist": 4, "acc": 4, "gir": 4, "putt": 4, "scr": 3},
     "Valero Texas Open":             {"dist": 3, "acc": 4, "gir": 4, "putt": 4, "scr": 4},
-    "Zurich Classic of New Orleans": {"dist": 4, "acc": 3, "gir": 3, "putt": 3, "scr": 3},
-    "THE CJ CUP Byron Nelson":      {"dist": 4, "acc": 3, "gir": 3, "putt": 4, "scr": 3},
+    "Zurich Classic of New Orleans": {"dist": 4, "acc": 3, "gir": 4, "putt": 3, "scr": 3},
+    "THE CJ CUP Byron Nelson":      {"dist": 3, "acc": 2, "gir": 3, "putt": 5, "scr": 2},
     "Charles Schwab Challenge":      {"dist": 2, "acc": 5, "gir": 4, "putt": 4, "scr": 5},
-    "RBC Canadian Open":             {"dist": 3, "acc": 4, "gir": 4, "putt": 3, "scr": 3},
-    "John Deere Classic":            {"dist": 3, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
-    "Genesis Scottish Open":         {"dist": 3, "acc": 4, "gir": 3, "putt": 3, "scr": 5},
-    "3M Open":                       {"dist": 4, "acc": 3, "gir": 3, "putt": 4, "scr": 3},
-    "Rocket Classic":                {"dist": 4, "acc": 2, "gir": 3, "putt": 4, "scr": 2},
-    "Wyndham Championship":          {"dist": 2, "acc": 4, "gir": 4, "putt": 4, "scr": 4},
+    "RBC Canadian Open":             {"dist": 3, "acc": 4, "gir": 4, "putt": 4, "scr": 3},
+    "John Deere Classic":            {"dist": 2, "acc": 2, "gir": 4, "putt": 5, "scr": 3},
+    "Genesis Scottish Open":         {"dist": 3, "acc": 3, "gir": 3, "putt": 3, "scr": 5},
+    "3M Open":                       {"dist": 4, "acc": 2, "gir": 4, "putt": 4, "scr": 3},
+    "Rocket Classic":                {"dist": 3, "acc": 2, "gir": 3, "putt": 5, "scr": 2},
+    "Wyndham Championship":          {"dist": 2, "acc": 5, "gir": 4, "putt": 5, "scr": 4},
 
     # Playoffs
-    "FedEx St. Jude Championship":   {"dist": 4, "acc": 3, "gir": 4, "putt": 4, "scr": 3},
+    "FedEx St. Jude Championship":   {"dist": 3, "acc": 4, "gir": 4, "putt": 4, "scr": 4},
     "BMW Championship":              {"dist": 3, "acc": 4, "gir": 4, "putt": 4, "scr": 3},
-    "TOUR Championship":             {"dist": 4, "acc": 3, "gir": 4, "putt": 5, "scr": 4},
+    "TOUR Championship":             {"dist": 3, "acc": 4, "gir": 4, "putt": 5, "scr": 4},
+}
+
+# ---------------------------------------------------------------------------
+# Course descriptions — brief justification for the weight profile
+# ---------------------------------------------------------------------------
+
+COURSE_DESCRIPTIONS = {
+    # Majors
+    "Masters Tournament":            "Augusta National (~7,545 yds). Wide fairways but enormous length; par 5s reachable for bombers give a huge scoring edge. Massive, severely undulating, lightning-fast greens are the defining feature.",
+    "PGA Championship":              "Quail Hollow (~7,600 yds). Tree-lined with the brutal 'Green Mile' finish (16-18). Tight driving corridors punish misses; both distance and accuracy are equally important.",
+    "U.S. Open":                     "USGA setup: narrowed fairways, deep rough, firmed greens. Hitting greens is critical and elite putting is a must on the most demanding surfaces in golf.",
+    "The Open":                      "Links course. Wind dominates, pot bunkers and gorse punish misses, firm conditions cause unpredictable bounces. Scrambling from links lies is the most critical skill.",
+
+    # Signature/Elevated
+    "THE PLAYERS Championship":      "TPC Sawgrass Stadium (~7,200 yds). Water on nearly every hole; miss fairways and you're in water or thick rough. Island Green 17th epitomizes the precision demand.",
+    "The Genesis Invitational":      "Riviera CC (~7,300 yds). Brutal Kikuyu rough around small, sloped greens makes GIR the premium stat. Missing those small greens into Kikuyu makes scrambling very hard.",
+    "Arnold Palmer Invitational":    "Bay Hill (~7,400 yds). Longer than it appears with water on several holes. Par 5s reward bombers and wind off the lakes is a factor.",
+    "the Memorial Tournament":       "Muirfield Village (~7,500+ yds post-renovation). Recent Nicklaus renovation made it significantly longer with very demanding new green complexes and water hazards.",
+    "AT&T Pebble Beach Pro-Am":      "Pebble Beach GL (~6,800 yds). Short and wind-blown with tiny greens. Premium on scrambling; distance is not a factor.",
+    "RBC Heritage":                  "Harbour Town GL (~7,100 yds). Tight tree-lined Pete Dye design with small, sneaky-difficult greens and strategic bunkers. Accuracy is paramount.",
+    "Travelers Championship":        "TPC River Highlands (~6,800 yds). Short course with a drivable par-4 15th and reachable par 5s rewarding distance. A birdie-fest where converting putts is critical.",
+    "Truist Championship":           "Venue TBD. Generic profile pending venue confirmation.",
+    "The Sentry":                    "Kapalua Plantation (~7,600 yds). Massive fairways, huge elevation changes, very windy. The ultimate bomber's course where long hitters dominate every year.",
+
+    # Standard events
+    "Farmers Insurance Open":        "Torrey Pines South (~7,700 yds). One of the longest courses on Tour with Kikuyu rough. Distance is the biggest differentiator; greens are large enough that scrambling is less critical.",
+    "WM Phoenix Open":               "TPC Scottsdale Stadium (~7,200 yds). Wide open, low-scoring event. Not as distance-dependent as it appears; putting separates contenders in shootouts.",
+    "The Honda Classic":             "PGA National Champion (~7,100 yds). 'The Bear Trap' with water on nearly every hole. Wind off the Intracoastal makes it one of the most penalizing courses for errant drives.",
+    "Valspar Championship":          "Innisbrook Copperhead (~7,300 yds). Tight and demanding with the 'Snake Pit' finish. A precision course where putting and scrambling win.",
+    "Texas Children's Houston Open": "Memorial Park (~7,400 yds). Tom Doak redesign made it longer and tighter. Trees and wind are major factors; plays harder than the scorecard suggests.",
+    "Valero Texas Open":             "TPC San Antonio Oaks (~7,400 yds). A balanced all-around test with length, trees, wind, and water. No single stat dominates.",
+    "Zurich Classic of New Orleans": "TPC Louisiana (~7,400 yds). Wide open, long Pete Dye design with water and wind. Approach play matters despite the generous fairways.",
+    "THE CJ CUP Byron Nelson":      "TPC Craig Ranch (~7,400 yds). Wide open with generous fairways; a massive birdie-fest. Fundamentally a putting contest where the winning score is always very low.",
+    "Charles Schwab Challenge":      "Colonial CC (~7,200 yds). 'Hogan's Alley' -- the quintessential accuracy course. Short, tight fairways, small greens, deep bunkers.",
+    "RBC Canadian Open":             "Hamilton G&CC. Tight, tree-lined classic layout. Scoring has been competitive; converting on demanding greens is essential.",
+    "John Deere Classic":            "TPC Deere Run (~7,200 yds). Short, birdie-friendly with wide fairways. Always a low-scoring event where putting is king.",
+    "Genesis Scottish Open":         "Renaissance Club. Links-influenced and relatively open compared to traditional links. Wind is the main defense; scrambling is critical.",
+    "3M Open":                       "TPC Twin Cities (~7,400 yds). Open layout with wide fairways favoring distance. GIR matters on the receptive greens.",
+    "Rocket Classic":                "Detroit GC (~7,000 yds). Short Donald Ross course and massive birdie-fest with record-low scores. Putting is everything.",
+    "Wyndham Championship":          "Sedgefield CC (~7,100 yds). Short with Donald Ross greens featuring severe slopes and tight fairways. A precision course demanding elite accuracy and putting.",
+
+    # Playoffs
+    "FedEx St. Jude Championship":   "TPC Southwind (~7,200 yds). Water everywhere with tight driving corridors. Punishes errant drives and demands recovery skills.",
+    "BMW Championship":              "Venue varies. Balanced profile appropriate without a confirmed venue.",
+    "TOUR Championship":             "East Lake (~7,300 yds). Tree-lined with water, recently renovated. Medium length; rewards accuracy more than distance.",
 }
 
 # Stat definitions: ESPN stat_name, display label, and whether lower is better
@@ -166,7 +211,7 @@ def _compute_percentiles(stats_df):
     for stat_name, label, key, lower_is_better in STAT_CATEGORIES:
         if lower_is_better:
             # Lower raw value = higher percentile
-            result[key] = pivoted[stat_name].rank(ascending=True, pct=True) * 100
+            result[key] = pivoted[stat_name].rank(ascending=False, pct=True) * 100
         else:
             result[key] = pivoted[stat_name].rank(ascending=True, pct=True) * 100
 
@@ -218,7 +263,7 @@ def _render_radar_chart(profile):
     return fig
 
 
-def _render_profile_text(profile):
+def _render_profile_text(profile, tournament_name=None):
     """Render text breakdown of course demands with bar visualization."""
     keys = ["dist", "acc", "gir", "putt", "scr"]
     labels = {
@@ -243,6 +288,10 @@ def _render_profile_text(profile):
         parts.append(f"**Less important:** {', '.join(low)}")
     if parts:
         st.markdown("  \n".join(parts))
+
+    # Course description
+    if tournament_name and tournament_name in COURSE_DESCRIPTIONS:
+        st.markdown(f"*{COURSE_DESCRIPTIONS[tournament_name]}*")
 
 
 # ---------------------------------------------------------------------------
@@ -292,7 +341,7 @@ def render_course_fit(db):
         fig = _render_radar_chart(profile)
         st.plotly_chart(fig, use_container_width=True)
     with col_text:
-        _render_profile_text(profile)
+        _render_profile_text(profile, tournament_name)
 
     st.divider()
 
