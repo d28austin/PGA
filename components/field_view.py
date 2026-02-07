@@ -315,27 +315,33 @@ def render_field_view(tournament_name, db, fetcher):
         st.dataframe(player_list_df, use_container_width=True, height=600)
         return
 
-    # Get par data for this tournament
+    # Get par data for this tournament - per year (tournaments can change format)
     conn = sqlite3.connect(db.db_path)
     cursor = conn.cursor()
+
+    # Get all year/tournament_id combos for this tournament
     cursor.execute("""
         SELECT DISTINCT year, tournament_id
         FROM tournament_results
         WHERE tournament_name = ?
         ORDER BY year DESC
-        LIMIT 1
     """, (tournament_name,))
-    year_tid = cursor.fetchone()
+    year_tid_rows = cursor.fetchall()
 
-    tournament_par = 288  # default
+    # Build per-year par lookup
+    par_by_year = {}
+    tournament_par = 288  # default for display
     rounds_played = 4
     par_per_round = 72
-    if year_tid:
-        par_info = db.get_tournament_par(year_tid[1], year_tid[0])
-        if par_info:
-            tournament_par = par_info['total_par']
-            rounds_played = par_info['rounds']
-            par_per_round = par_info['par_per_round']
+    for yr, tid in year_tid_rows:
+        par_info = db.get_tournament_par(tid, yr)
+        if par_info and par_info.get('total_par'):
+            par_by_year[yr] = par_info['total_par']
+            # Use most recent year's par for display header
+            if yr == year_tid_rows[0][0]:
+                tournament_par = par_info['total_par']
+                rounds_played = par_info['rounds']
+                par_per_round = par_info['par_per_round']
 
     conn.close()
 
@@ -345,11 +351,16 @@ def render_field_view(tournament_name, db, fetcher):
     field_history_df['position_numeric'] = pd.to_numeric(field_history_df['position_clean'], errors='coerce')
     field_history_df['total_score_numeric'] = pd.to_numeric(field_history_df['total_score'], errors='coerce')
     field_history_df['earnings_numeric'] = pd.to_numeric(field_history_df['earnings'], errors='coerce')
-    field_history_df['score_to_par'] = field_history_df['total_score_numeric'] - tournament_par
 
-    # Mark made cuts
-    min_reasonable_score = tournament_par * 0.75
-    field_history_df['made_cut'] = (field_history_df['position_numeric'] <= 70) & (field_history_df['total_score_numeric'] >= min_reasonable_score)
+    # Compute score_to_par and made_cut using each year's actual par
+    field_history_df['year_par'] = field_history_df['year'].map(par_by_year).fillna(tournament_par)
+    field_history_df['score_to_par'] = field_history_df['total_score_numeric'] - field_history_df['year_par']
+
+    # Mark made cuts using per-year par for the min score threshold
+    field_history_df['made_cut'] = (
+        (field_history_df['position_numeric'] <= 70) &
+        (field_history_df['total_score_numeric'] >= field_history_df['year_par'] * 0.75)
+    )
 
     # Calculate stats for players in field
     def calculate_wins(positions):
