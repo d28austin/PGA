@@ -885,6 +885,53 @@ SCORE RANGES:
         no_history_count = len(display_stats[display_stats['appearances'] == 0])
         st.metric("First-Time Players", no_history_count)
 
+    # --- Top Picks Section ---
+    available_picks = player_stats[player_stats['status'] == '✅ Available'].head(5)
+
+    if not available_picks.empty:
+        st.divider()
+        st.subheader("🎯 Top Picks - Available Players")
+
+        for rank_idx, (_, pick) in enumerate(available_picks.iterrows(), 1):
+            # Build reasoning string
+            reasons = []
+            if pick['owgr_numeric'] <= 10:
+                reasons.append("Top-10 world ranking")
+            elif pick['owgr_numeric'] <= 25:
+                reasons.append("Top-25 world ranking")
+            if pd.notna(pick['last_5_avg']) and pick['last_5_avg'] <= 10:
+                reasons.append("Hot recent form")
+            elif pd.notna(pick['last_5_avg']) and pick['last_5_avg'] <= 20:
+                reasons.append("Solid recent form")
+            if pd.notna(pick['avg_finish']) and pick['avg_finish'] <= 15:
+                reasons.append("Strong course history")
+            if pd.notna(pick['last_5_cut_pct']) and pick['last_5_cut_pct'] == 100:
+                reasons.append("Making every cut")
+            if pick['top_10s'] > 0:
+                reasons.append(f"{int(pick['top_10s'])} top-10{'s' if pick['top_10s'] > 1 else ''} here")
+
+            reason_str = " + ".join(reasons) if reasons else "Balanced profile"
+
+            # Format stat values
+            owgr_display = str(int(pick['owgr_numeric'])) if pick['owgr_numeric'] < 9999 else "NR"
+            l5_display = f"{pick['last_5_avg']:.1f}" if pd.notna(pick['last_5_avg']) else "N/A"
+            course_avg_display = f"{pick['avg_finish']:.1f}" if pd.notna(pick['avg_finish']) else "N/A"
+            cut_pct_display = f"{pick['last_5_cut_pct']:.0f}%" if pd.notna(pick['last_5_cut_pct']) else "N/A"
+
+            cols = st.columns([0.08, 0.92])
+            with cols[0]:
+                st.markdown(f"### #{rank_idx}")
+            with cols[1]:
+                st.markdown(
+                    f"**{pick['player_name']}** &nbsp;&nbsp; Value: **{pick['value_numeric']:.1f}**"
+                )
+                st.caption(
+                    f"OWGR: {owgr_display} · Last 5 Avg: {l5_display} · "
+                    f"Course Avg: {course_avg_display} · L5 Cut%: {cut_pct_display}"
+                )
+                st.markdown(f"*{reason_str}*")
+
+        st.caption("Ranked by Value Score among available (unused) players.")
 
 
 def render_player_quick_analysis(player_name, tournament_name, db, field_history_df, tournament_par):

@@ -166,6 +166,80 @@ def main():
                         time.sleep(2)
                         st.rerun()
 
+            if st.button("Update OWGR Rankings", use_container_width=True):
+                import glob as _glob
+                import os as _os
+                import csv as _csv
+
+                db = st.session_state.db
+                owgr_status = st.empty()
+
+                # Find the most recent downloaded_rankings CSV in the repo
+                app_dir = _os.path.dirname(_os.path.abspath(__file__))
+                csv_files = _glob.glob(_os.path.join(app_dir, "downloaded_rankings*.csv"))
+
+                if not csv_files:
+                    owgr_status.warning("No downloaded_rankings*.csv file found in the project folder. "
+                                        "Download the CSV from owgr.com and place it here.")
+                else:
+                    # Pick the most recently modified file
+                    latest_csv = max(csv_files, key=_os.path.getmtime)
+                    file_mod_time = _dt.fromtimestamp(_os.path.getmtime(latest_csv))
+                    owgr_status.text(f"Reading {_os.path.basename(latest_csv)} (modified {file_mod_time.strftime('%b %d, %Y')})...")
+
+                    rankings = {}
+                    weekend_date = None
+                    with open(latest_csv, 'r', encoding='utf-8-sig') as f:
+                        reader = _csv.DictReader(f)
+                        for row in reader:
+                            try:
+                                first = row.get('First Name', '').strip().strip('"')
+                                last = row.get('Last Name', '').strip().strip('"')
+                                rank_str = row.get('RANKING', '').strip().strip('"')
+                                if first and last and rank_str:
+                                    rank = int(rank_str)
+                                    if rank > 0:
+                                        player_name = f"{first} {last}"
+                                        rankings[player_name] = rank
+                                if not weekend_date:
+                                    weekend_date = row.get('Weekend date', '').strip().strip('"')
+                            except (ValueError, TypeError):
+                                continue
+
+                    if rankings:
+                        # Full replace — the CSV has the complete ranking list
+                        import sqlite3 as _sq2
+                        conn = _sq2.connect(db.db_path)
+                        cursor = conn.cursor()
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS owgr_rankings (
+                                player_name TEXT PRIMARY KEY,
+                                ranking INTEGER NOT NULL,
+                                last_updated TEXT NOT NULL
+                            )
+                        """)
+                        cursor.execute("DELETE FROM owgr_rankings")
+                        timestamp = _dt.now().isoformat()
+                        for pname, rank in rankings.items():
+                            cursor.execute("""
+                                INSERT INTO owgr_rankings
+                                (player_name, ranking, last_updated)
+                                VALUES (?, ?, ?)
+                            """, (pname, rank, timestamp))
+                        conn.commit()
+                        conn.close()
+
+                        date_label = weekend_date if weekend_date else file_mod_time.strftime('%b %d, %Y')
+                        owgr_status.text(
+                            f"Loaded {len(rankings)} OWGR rankings (week of {date_label}) "
+                            f"from {_os.path.basename(latest_csv)}"
+                        )
+                        import time as _time
+                        _time.sleep(2)
+                        st.rerun()
+                    else:
+                        owgr_status.warning("No valid rankings found in the CSV file.")
+
         st.divider()
 
         # Tournament selectors - two options: alphabetical or by date
