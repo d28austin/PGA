@@ -508,7 +508,7 @@ def main():
             st.rerun()
 
     # Main content area with tabs
-    tab0, tab1, tab2, tab3, tab4, tab_schedule, tab_planner, tab_players, tab_stats, tab_picks, tab_standings = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab_schedule, tab_planner, tab_coursefit, tab_players, tab_stats, tab_picks, tab_standings = st.tabs([
         "🏌️ In the Field",
         "📊 Tournament History",
         "👤 Player Deep Dive",
@@ -516,6 +516,7 @@ def main():
         "💰 Betting Odds",
         "📅 2026 Schedule",
         "🗓️ Season Planner",
+        "🏟️ Course Fit",
         "👥 All Players",
         "🎯 ESPN Stats",
         "📋 My Picks",
@@ -581,6 +582,10 @@ def main():
     with tab_planner:
         from components.season_planner import render_season_planner
         render_season_planner(st.session_state.db)
+
+    with tab_coursefit:
+        from components.course_fit import render_course_fit
+        render_course_fit(st.session_state.db)
 
     with tab_players:
         from components.player_management import render_player_management
