@@ -308,11 +308,24 @@ def render_season_planner(db):
 
     matrix_df = pd.DataFrame(matrix_data)
 
-    # ── Find best tournament per player & best player per tournament ───
+    # ── Purse weighting ───────────────────────────────────────────────
+    # "Best Week" should factor in purse so you deploy top players at
+    # the richest events — value_score × (purse / median_purse).
+    purse_by_tourn = dict(zip(
+        display_tournaments["tournament_name"],
+        display_tournaments["purse"],
+    ))
+    median_purse = display_tournaments["purse"].median()
+    if median_purse <= 0:
+        median_purse = 1  # safety
+
     best_tourn_per_player = {}
     for _, r in matrix_df.iterrows():
-        scores = {t: r[t] for t in tournament_names}
-        best_tourn_per_player[r["Player"]] = max(scores, key=scores.get)
+        weighted = {
+            t: r[t] * (purse_by_tourn.get(t, median_purse) / median_purse)
+            for t in tournament_names
+        }
+        best_tourn_per_player[r["Player"]] = max(weighted, key=weighted.get)
 
     matrix_df["Best Week"] = matrix_df["Player"].map(
         lambda n: best_tourn_per_player.get(n, "")
@@ -352,34 +365,68 @@ def render_season_planner(db):
 
     next_tourn = tournament_names[0]
     next_display = display_tournaments.iloc[0]
+    next_purse = purse_by_tourn.get(next_tourn, 0)
+    next_purse_factor = next_purse / median_purse if median_purse else 1
 
     col_a, col_b = st.columns(2)
 
     with col_a:
         st.subheader(f"Best Picks: {next_tourn}")
         st.caption(f"{next_display['date_display']} | Purse: {next_display['purse_display']}")
-        top_for_next = matrix_df.nlargest(5, next_tourn)[
-            ["Player", "OWGR", next_tourn]
-        ].rename(columns={next_tourn: "Value"})
-        st.dataframe(top_for_next, hide_index=True, use_container_width=True)
+
+        # Recommend players whose best-week IS this week, or who are
+        # well-matched to the purse tier (don't waste elite players on
+        # a weak-purse event if they have a richer event coming up).
+        rec_rows = []
+        for _, r in matrix_df.nlargest(30, next_tourn).iterrows():
+            best_t = best_tourn_per_player[r["Player"]]
+            is_best_week = best_t == next_tourn
+            # How much value are you leaving on the table by using them now?
+            best_val = r[best_t]
+            this_val = r[next_tourn]
+            best_purse_f = purse_by_tourn.get(best_t, median_purse) / median_purse
+            opportunity_cost = (best_val * best_purse_f) - (this_val * next_purse_factor)
+            rec_rows.append({
+                "Player": r["Player"],
+                "OWGR": int(r["OWGR"]),
+                "Value": this_val,
+                "Best Week?": "Yes" if is_best_week else best_t,
+                "_opp_cost": opportunity_cost,
+            })
+
+        rec_df = pd.DataFrame(rec_rows)
+        # Sort: players whose best week IS this week first, then by
+        # lowest opportunity cost (least wasted by using them now).
+        rec_df["_sort"] = rec_df["_opp_cost"]
+        rec_df.loc[rec_df["Best Week?"] == "Yes", "_sort"] = -1
+        rec_df = rec_df.sort_values("_sort").head(8)
+        st.dataframe(
+            rec_df[["Player", "OWGR", "Value", "Best Week?"]],
+            hide_index=True, use_container_width=True,
+        )
 
     with col_b:
         st.subheader("Save For Later")
-        st.caption("Top players whose best value is at a future tournament")
+        st.caption("Top players whose purse-weighted best value is a future tournament")
         save_rows = []
-        for _, r in matrix_df.nlargest(10, "Base").iterrows():
+        for _, r in matrix_df.nlargest(15, "Base").iterrows():
             best_t = best_tourn_per_player[r["Player"]]
             if best_t != next_tourn:
                 best_date = display_tournaments.loc[
                     display_tournaments["tournament_name"] == best_t, "date_display"
                 ]
+                best_purse = display_tournaments.loc[
+                    display_tournaments["tournament_name"] == best_t, "purse_display"
+                ]
                 date_str = best_date.iloc[0] if not best_date.empty else ""
+                purse_str = best_purse.iloc[0] if not best_purse.empty else ""
                 save_rows.append({
                     "Player": r["Player"],
                     "Best Tournament": best_t,
                     "Date": date_str,
-                    "Value": r[best_t],
-                    "This Week": r[next_tourn],
+                    "Purse": purse_str,
+                    "Value There": r[best_t],
+                    "Value Now": r[next_tourn],
                 })
         if save_rows:
             st.dataframe(pd.DataFrame(save_rows), hide_index=True, use_container_width=True)
