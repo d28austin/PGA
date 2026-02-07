@@ -39,6 +39,7 @@ Thumbs.db
 # Test files and temporary data
 *.json
 !package.json
+!data/user_picks/*.json
 *.csv
 *.txt
 !requirements.txt

@@ -110,6 +110,12 @@ def main():
     with st.sidebar:
         st.header("Settings & Filters")
 
+        # User selector
+        st.subheader("Who's Playing?")
+        selected_user = st.selectbox("Select your name:", ["Austin", "Chase", "Jeff"], key="current_user")
+        st.session_state.db.current_user = selected_user
+        st.divider()
+
         # Load data if not already loaded
         if not st.session_state.data_loaded:
             load_initial_data()
@@ -487,7 +493,7 @@ def main():
         st.divider()
 
         # Used players section
-        st.subheader("One-and-Done Tracker")
+        st.subheader(f"One-and-Done Tracker ({selected_user})")
         used_players = st.session_state.db.get_used_players()
 
         if used_players:
@@ -579,7 +585,7 @@ def main():
 
     # Show used players modal if requested
     if hasattr(st.session_state, 'show_used_players') and st.session_state.show_used_players:
-        with st.expander("Used Players Details", expanded=True):
+        with st.expander(f"Used Players — {st.session_state.get('current_user', 'Unknown')}", expanded=True):
             used_df = st.session_state.db.get_used_players_details()
             if not used_df.empty:
                 st.dataframe(used_df, use_container_width=True)

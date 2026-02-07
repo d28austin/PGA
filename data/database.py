@@ -14,8 +14,17 @@ class PGADatabase:
 
     def __init__(self, db_path: str = "data/cache/pga_data.db"):
         self.db_path = db_path
+        self._current_user: Optional[str] = None
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self.init_database()
+
+    @property
+    def current_user(self) -> Optional[str]:
+        return self._current_user
+
+    @current_user.setter
+    def current_user(self, value: Optional[str]):
+        self._current_user = value
 
     def init_database(self):
         """Initialize database tables"""
@@ -470,6 +479,10 @@ class PGADatabase:
 
     def mark_player_used(self, player_name: str, tournament_name: str, week: str):
         """Mark a player as used in the one-and-done pool"""
+        if self._current_user:
+            from data.user_picks_store import mark_player_used
+            mark_player_used(self._current_user, player_name, tournament_name, week)
+            return
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("""
@@ -481,6 +494,9 @@ class PGADatabase:
 
     def get_used_players(self) -> List[str]:
         """Get list of all used players"""
+        if self._current_user:
+            from data.user_picks_store import get_used_players
+            return get_used_players(self._current_user)
         conn = sqlite3.connect(self.db_path)
         df = pd.read_sql("SELECT player_name FROM used_players", conn)
         conn.close()
@@ -488,6 +504,9 @@ class PGADatabase:
 
     def get_used_players_details(self) -> pd.DataFrame:
         """Get detailed list of used players with tournament info"""
+        if self._current_user:
+            from data.user_picks_store import get_used_players_details
+            return get_used_players_details(self._current_user)
         conn = sqlite3.connect(self.db_path)
         df = pd.read_sql("""
             SELECT player_name, tournament_name, week_used, date_used
@@ -499,6 +518,10 @@ class PGADatabase:
 
     def remove_used_player(self, player_name: str):
         """Remove a player from the used list"""
+        if self._current_user:
+            from data.user_picks_store import remove_used_player
+            remove_used_player(self._current_user, player_name)
+            return
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM used_players WHERE player_name = ?", (player_name,))
@@ -507,6 +530,10 @@ class PGADatabase:
 
     def clear_used_players(self):
         """Clear all used players (start new season)"""
+        if self._current_user:
+            from data.user_picks_store import clear_used_players
+            clear_used_players(self._current_user)
+            return
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute("DELETE FROM used_players")
